@@ -16,6 +16,7 @@
 #include "Memory.h"
 #include "Object.h"
 #include "Str.h"
+#include "Tracking.h"
 
 #include <stdlib.h>
 
@@ -24,6 +25,10 @@
 #include <process.h>
 #include <timeapi.h>
 #include <winioctl.h>
+
+#include <windows.h>
+#define DBGHELP_TRANSLATE_TCHAR 1
+#include <DbgHelp.h>
 
 static HANDLE heap_handle = NULL;
 static HANDLE hstdout = INVALID_HANDLE_VALUE;

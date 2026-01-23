@@ -216,6 +216,7 @@ ERR_149					Сертификат VPN-сервера не соответству�
 ERR_150					Не удалось обнаружить версию TLS, поддерживаемую обеими сторонами. Обычно это означает, что одна сторона может использовать устаревшую версию TLS, которая отключена другой стороной.
 ERR_151					Не удалось обнаружить доступное шифрование, поддерживаемое обеими сторонами, или указанное шифрование несовместимо с сертификатом сервера.
 ERR_152					Не удалось установить TLS соединение.
+ERR_153 				OpenID Connect sign-in failed before reaching the VPN server.
 
 
 # Concerning licenses
@@ -2108,6 +2109,11 @@ LC_UPDATE_VLAN			Драйвер виртуального сетевого ада
 LC_DELETE_VLAN			Удален виртуальный сетевой адаптер "%S".
 LC_SET_PASSWORD			Изменен пароль для подключения к клиентской службе.
 LC_TAP_NOT_FOUND		Не удается найти tun/tap драйвер для Mac OS X. Установите tun/tap драйвер.
+LC_OIDC_START_INTERECTIVE_FLOW Interactive OIDC authentication flow starting.
+LC_OIDC_START_SILENT_FLOW Silent OIDC authentication flow starting (user: %s).
+LC_OIDC_OK				OIDC authentication succeeded (user: %s).
+LC_OIDC_FAIL			OIDC authentication failed (status=%u, reason=%s).
+LC_LOG_MESSAGE 			%S
 
 # (Eraser log)
 LE_START				Мониторинг каталога "%S". Если объем доступного свободного дискового пространства становится меньше %S, файлы резервных копий для файлов журналов и конфигураций, которые сохраняются в подкаталогах этого каталога, будут автоматически удалены, начиная с самых старых файлов. Объем свободного дискового пространства, определяющий, когда начинать удаление, можно изменить, поменяв параметр "AutoDeleteCheckDiskFreeSpaceMin" в файле конфигурации.

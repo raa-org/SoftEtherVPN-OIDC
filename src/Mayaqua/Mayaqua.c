@@ -37,6 +37,10 @@ char *cmdline = NULL;							// Command line
 wchar_t *uni_cmdline = NULL;					// Unicode command line
 bool g_foreground = false;					// Execute service in foreground mode
 
+// Optional Debug() routing (env-controlled)
+bool g_debug_to_log = false;
+bool g_debug_to_stdout = false;
+
 // Static variable
 static char *exename = NULL;						// EXE file name (ANSI)
 static wchar_t *exename_w = NULL;					// EXE file name (Unicode)
@@ -450,6 +454,9 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	// Initialize the string library
 	InitStringLibrary();
 
+	// Enable optional Debug() outputs via env vars
+	InitDebugOptionsFromEnv();
+
 	// Initialization of the locale information
 	SetLocale(NULL);
 
@@ -572,6 +579,9 @@ void FreeMayaqua()
 
 	// Release of network communication module
 	FreeNetwork();
+
+	// Close optional Debug() outputs (if enabled)
+	FreeDebugOptions();
 
 	// Release of real-time clock
 	FreeTick64();

@@ -4050,6 +4050,36 @@ void Zero(void *addr, UINT size)
 	memset(addr, 0, size);
 }
 
+// Securely zero memory to prevent compiler optimization.
+// Use platform primitives when available; fall back to a volatile memset.
+void SecureZero(void* addr, UINT size)
+{
+	if (addr == NULL || size == 0)
+	{
+		return;
+	}
+
+#if defined(_WIN32)
+	// <windows.h> defines SecureZeroMemory; on MSVC it maps to RtlSecureZeroMemory.
+	// Include windows.h in this C file or ensure it's already included via Win32.h.
+	SecureZeroMemory(addr, (SIZE_T)size);
+
+#elif defined(__STDC_LIB_EXT1__)
+	// C11 Annex K (optional). Ignore return value; if it fails, fall back below.
+	(void)memset_s(addr, (rsize_t)size, 0, (rsize_t)size);
+
+#elif defined(HAVE_EXPLICIT_BZERO)
+	// Define HAVE_EXPLICIT_BZERO in configure if available (BSD, glibc >= 2.25).
+	explicit_bzero(addr, (size_t)size);
+
+#else
+	// Fallback: volatile function pointer defeats dead-store elimination.
+	typedef void* (*memset_fn_t)(void*, int, size_t);
+	static memset_fn_t volatile vmemset = memset;
+	vmemset(addr, 0, (size_t)size);
+#endif
+}
+
 // Compare the string map entries
 int StrMapCmp(void *p1, void *p2)
 {

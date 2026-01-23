@@ -34,6 +34,8 @@
 // TODO: Mayaqua should not depend on Cedar.
 #include "Cedar/WinUi.h"
 
+#include "Oidc/OidcClient.h"
+
 // Main routine of the session
 void SessionMain(SESSION *s)
 {
@@ -1154,6 +1156,10 @@ bool SessionConnect(SESSION *s)
 								Zero(s->Account->ClientAuth->HashedPassword, sizeof(s->Account->ClientAuth->HashedPassword));
 								Zero(s->Account->ClientAuth->PlainPassword, sizeof(s->Account->ClientAuth->PlainPassword));
 							}
+							else if (s->Account->ClientAuth->AuthType == CLIENT_AUTHTYPE_OIDC)
+							{
+								Zero(s->Account->ClientAuth->OidcIdToken, sizeof(s->Account->ClientAuth->OidcIdToken));
+							}
 						}
 					}
 					Unlock(s->Account->lock);
@@ -1398,6 +1404,64 @@ void PrintSessionTotalDataSize(SESSION *s)
 
 }
 
+static bool OidcSyncAuthToAccountAndSave(SESSION* s, const CLIENT_AUTH* auth)
+{
+	bool updated = false;
+
+	if (s == NULL || auth == NULL)
+	{
+		return false;
+	}
+
+	if (auth->AuthType != CLIENT_AUTHTYPE_OIDC || IsEmptyStr(auth->Username))
+	{
+		return false;
+	}
+
+	if (s->Account == NULL || s->Cedar == NULL || s->Cedar->Client == NULL)
+	{
+		return false;
+	}
+
+	ACCOUNT* a = s->Account;
+
+	Lock(a->lock);
+	{
+		CLIENT_AUTH* acc_auth = a->ClientAuth;
+		if (acc_auth == NULL || acc_auth->AuthType != CLIENT_AUTHTYPE_OIDC)
+		{
+			if (acc_auth != NULL)
+			{
+				CiFreeClientAuth(acc_auth);
+			}
+
+			a->ClientAuth = CopyClientAuth((CLIENT_AUTH*)auth);
+
+			if (a->ClientAuth != NULL)
+			{
+				SecureZero(a->ClientAuth->OidcIdToken, sizeof(a->ClientAuth->OidcIdToken));
+				updated = true;
+			}
+		}
+		else
+		{
+			if (StrCmp(acc_auth->Username, auth->Username) != 0)
+			{
+				StrCpy(acc_auth->Username, sizeof(acc_auth->Username), auth->Username);
+				updated = true;
+			}
+		}
+	}
+	Unlock(a->lock);
+
+	if (updated)
+	{
+		CiSaveConfigurationFile(s->Cedar->Client);
+	}
+
+	return updated;
+}
+
 // Client thread
 void ClientThread(THREAD *t, void *param)
 {
@@ -1472,10 +1536,49 @@ void ClientThread(THREAD *t, void *param)
 //			s->TotalSendSize = s->TotalSendSizeReal = 0;
 		s->NextConnectionTime = 0;
 
-		// Connect
-		s->ClientStatus = CLIENT_STATUS_CONNECTING;
-		s->Halt = false;
-		SessionConnect(s);
+		if (s->ClientAuth != NULL && s->ClientAuth->AuthType == CLIENT_AUTHTYPE_OIDC)
+		{
+			CLIENT_AUTH* auth = s->ClientAuth;
+
+			OIDC_STATUS st = ClientEnsureOidcIdToken(auth);
+
+			if (st == OIDC_OK && !IsEmptyStr(auth->OidcIdToken))
+			{
+				if (!OidcSyncAuthToAccountAndSave(s, auth))
+				{
+					CLog(s->Cedar->Client, "LC_LOG_MESSAGE", "Config file wasn't updated. Username hasn't been changed.");
+				}
+				// Normal VPN connect path with a valid OIDC IdToken
+				SessionConnect(s);
+
+				// Wipe temporary IdToken stored in CLIENT_AUTH
+				SecureZero(auth->OidcIdToken, sizeof(auth->OidcIdToken));
+			}
+			else
+			{
+				// Map OIDC_STATUS to session error in the minimal way.
+				if (st == OIDC_ERR_USER_CANCELED)
+				{
+					s->Err = ERR_USER_CANCEL;
+					s->UserCanceled = true;
+				}
+				else
+				{
+					// For all other failures, treat it as local OIDC flow error.
+					if (s->Err == ERR_NO_ERROR)
+					{
+						s->Err = ERR_OIDC_FLOW_FAILED;
+					}
+				}
+				// No SessionConnect() call in this branch.
+			}
+		}
+		else
+		{
+			// Non-OIDC authentication path (unchanged)
+			SessionConnect(s);
+		}
+		
 		if (s->UserCanceled)
 		{
 			s->Err = ERR_USER_CANCEL;

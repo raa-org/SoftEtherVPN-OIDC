@@ -43,6 +43,9 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
+#include "Oidc/OidcServer.h"
+#include "Oidc/OidcClient.h"
+
 // Download and save intermediate certificates if necessary
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
 {
@@ -1087,6 +1090,15 @@ TOKEN_LIST *EnumHub(SESSION *s)
 	return ret;
 }
 
+static bool OidcEnvBool(const char *name)
+{
+	const char *v;
+	if (name == NULL) return false;
+	v = getenv(name);
+	if (IsEmptyStr((char *)v)) return false;
+	return (ToInt((char *)v) != 0);
+}
+
 // Server accepts a connection from client
 bool ServerAccept(CONNECTION *c)
 {
@@ -1702,6 +1714,9 @@ bool ServerAccept(CONNECTION *c)
 				case CLIENT_AUTHTYPE_CERT:
 					authtype_str = _UU("LH_AUTH_CERT");
 					break;
+				case CLIENT_AUTHTYPE_OIDC:
+					authtype_str = _UU("LH_AUTH_OIDC");
+					break;
 				case AUTHTYPE_EXTERNAL:
 					authtype_str = _UU("LH_AUTH_EXTERNAL");
 					break;
@@ -2015,6 +2030,91 @@ bool ServerAccept(CONNECTION *c)
 						FreePack(p);
 						c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
 						goto CLEANUP;
+					}
+					break;
+
+				case CLIENT_AUTHTYPE_OIDC:
+					{
+						// OIDC ID Token authentication
+						// Expect: username & hubname already parsed; ID token in "jwt"
+						char id_token[MAX_OIDC_TOKEN_LEN + 1];
+						Zero(id_token, sizeof(id_token));
+
+						if (PackGetStr(p, "jwt", id_token, sizeof(id_token)) == false ||
+						    IsEmptyStr(id_token))
+						{
+							// Missing token
+							auth_ret = false;
+							break;
+						}
+
+						// Lookup user to pull AUTHOIDC config (and ensure this user is OIDC-enabled)
+						USER *u_lookup = AcGetUser(hub, username);
+						const AUTHOIDC *cfg = NULL;
+
+						if (u_lookup != NULL && u_lookup->AuthType == AUTHTYPE_OIDC)
+						{
+							cfg = (const AUTHOIDC *)u_lookup->AuthData;
+						}
+
+						if (cfg == NULL)
+						{
+							// User not found or not configured for OIDC
+							if (u_lookup) { ReleaseUser(u_lookup); }
+							auth_ret = false;
+							break;
+						}
+
+						if (cfg->TestMode && OidcEnvBool("SE_OIDC_TEST_MODE"))
+						{
+							// Explicit test mode short-circuit (tests only)
+							auth_ret = true;
+						}
+						else
+						{
+							if (cfg->TestMode && !OidcEnvBool("SE_OIDC_TEST_MODE"))
+							{
+								Debug("OIDC: TestMode is set for user=%s but SE_OIDC_TEST_MODE is not enabled; enforcing full verification.\n",
+									username);
+							}
+
+							OIDC_SERVER_CONFIG sc; Zero(&sc, sizeof(sc));
+							sc.ClockSkewSec = 60;
+							sc.EnableTestMode = false;
+							if (cfg->UsernameClaim) StrCpy(sc.UsernameClaim, sizeof(sc.UsernameClaim), cfg->UsernameClaim);
+							if (cfg->Issuer)    StrCpy(sc.ExpectedIssuer,   sizeof(sc.ExpectedIssuer),   cfg->Issuer);
+							if (cfg->ClientId)  StrCpy(sc.ExpectedAudience, sizeof(sc.ExpectedAudience), cfg->ClientId);
+
+							OIDC_VALIDATION_RESULT vr; Zero(&vr, sizeof(vr));
+							char errbuf[256]; Zero(errbuf, sizeof(errbuf));
+							if (OidcValidateIdToken(id_token, &sc, &vr, errbuf, sizeof(errbuf)))
+							{
+								// Enforce that the token identity matches the requested SoftEther username.
+								if (IsEmptyStr(vr.Username))
+								{
+									Debug("OIDC: missing username claim (claim=%s)\n",
+										IsEmptyStr(sc.UsernameClaim) ? "(default)" : sc.UsernameClaim);
+									auth_ret = false;
+								}
+								else if (StrCmpi(vr.Username, username) != 0)
+								{
+									Debug("OIDC: username mismatch: requested=%s token=%s (claim=%s)\n",
+										username, vr.Username, IsEmptyStr(sc.UsernameClaim) ? "(default)" : sc.UsernameClaim);
+									auth_ret = false;
+								}
+								else
+								{
+									auth_ret = true;
+								}
+							}
+							else
+							{
+								Debug("OIDC: validation failed for user=%s: %s\n", username, errbuf);
+								auth_ret = false;
+							}
+						}
+
+						if (u_lookup) { ReleaseUser(u_lookup); }
 					}
 					break;
 
@@ -4359,6 +4459,32 @@ bool ClientCheckServerCert(CONNECTION *c, bool *expired)
 	return ret;
 }
 
+bool ClientFillIdTokenFromSilentOidcRefresh(CLIENT_AUTH* client_auth)
+{
+	if (client_auth == NULL || client_auth->OidcConfig == NULL || client_auth->Username == NULL || IsEmptyStr(client_auth->Username))
+	{
+		return false;
+	}
+
+	bool ret = false;
+
+	/* Silent: try stored refresh_token */
+	{
+		OIDC_TOKENS oidc_tokens;
+		Zero(&oidc_tokens, sizeof(oidc_tokens));
+
+		if (OidcClientTrySilentRefreshWithStoredToken(client_auth->Username, client_auth->OidcConfig, &oidc_tokens) == OIDC_OK && IsEmptyStr(oidc_tokens.IdToken) == false)
+		{
+			StrCpy(client_auth->OidcIdToken, sizeof(client_auth->OidcIdToken), oidc_tokens.IdToken);
+			ret = true;
+		}
+
+		OidcClientFreeTokens(&oidc_tokens);
+	}
+
+	return ret;
+}
+
 // Client connects to the server
 bool ClientConnect(CONNECTION *c)
 {
@@ -5537,6 +5663,20 @@ bool ClientUploadAuth(CONNECTION *c)
 			{
 				c->Err = ERR_SECURE_DEVICE_OPEN_FAILED;
 				c->Session->ForceStopFlag = true;
+			}
+			break;
+
+		case CLIENT_AUTHTYPE_OIDC:
+			// OpenID Connect (ID token) authentication
+			// Expect the token to be already obtained by the client (browser/PKCE flow)
+			// and stored in a->OidcIdToken (or equivalent).
+			if (IsEmptyStr(a->OidcIdToken) == false)
+			{
+				p = PackLoginWithJWT(o->HubName, a->Username, a->OidcIdToken);
+			}
+			else
+			{
+				c->Err = ERR_PROTOCOL_ERROR;
 			}
 			break;
 		}
@@ -6866,6 +7006,25 @@ PACK *PackLoginWithExternal(char *hubname, char *username)
 	PackAddStr(p, "hubname", hubname);
 	PackAddStr(p, "username", username);
 	PackAddInt(p, "authtype", AUTHTYPE_EXTERNAL);
+
+	return p;
+}
+
+// Create a packet for oidc login
+PACK* PackLoginWithJWT(const char* hubname, const char* username, const char* jwt)
+{
+	PACK* p;
+	if (hubname == NULL || username == NULL || IsEmptyStr((char *)jwt))
+	{
+		return NULL;
+	}
+
+	p = NewPack();
+	PackAddStr(p, "method", "login");
+	PackAddStr(p, "hubname", hubname);
+	PackAddStr(p, "username", username);
+	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_OIDC);
+	PackAddStr(p, "jwt", (char *)jwt);
 
 	return p;
 }

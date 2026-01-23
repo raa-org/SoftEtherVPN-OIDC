@@ -216,7 +216,7 @@ ERR_149					The destination VPN Server's certificate does not match the specifie
 ERR_150					Failed to find the TLS version that is supported by both sides. This usually means that one side may be using an obsolete TLS version which is diabled by the other side.
 ERR_151					Failed to find an available cipher that is supported by both sides, or the cipher specified is not compatible with the server certificate.
 ERR_152					TLS handshake has failed.
-
+ERR_153 				OpenID Connect sign-in failed before reaching the VPN server.
 
 # Concerning licenses
 LICENSE_INFO_URL		https://selinks.org/?new_license
@@ -404,6 +404,9 @@ PW_TYPE_2				RADIUS or NT Domain Authentication
 PW_TYPE_3				Client Certificate Authentication
 PW_TYPE_4				Smart Card Authentication
 PW_TYPE_5				OpenSSL Engine Authentication
+PW_TYPE_6               OAuth2 / OpenID Connect
+
+
 
 PW_MSG_PROXY			User authentication failed on the proxy server %S. Re-enter the correct user name and password.
 PW_TYPE_PROXY			Proxy Server Authentication
@@ -1369,6 +1372,7 @@ SM_AUTHTYPE_2			Individual Certificate Authentication
 SM_AUTHTYPE_3			Signed Certificate Authentication
 SM_AUTHTYPE_4			RADIUS Authentication
 SM_AUTHTYPE_5			NT Domain Authentication
+SM_AUTHTYPE_6			OAuth2 / OpenID Connect
 SM_NO_GROUP				-
 SM_USER_DELETE_MSG		This will delete the user "%s". Do you really want to do this?
 SM_EDIT_USER_CAPTION_1	Create New User
@@ -1925,6 +1929,7 @@ LH_AUTH_PASSWORD		Password authentication
 LH_AUTH_PLAIN_PASSWORD	External server authentication
 LH_AUTH_CERT			Certificate authentication
 LH_AUTH_TICKET			Ticket authentication
+LH_AUTH_OIDC			OIDC/OAUTH2 authentication
 LH_AUTH_EXTERNAL		External server authentication
 LH_AUTH_WIREGUARD_KEY	WireGuard public key authentication
 LH_AUTH_OPENVPN_CERT	OpenVPN certificate authentication
@@ -2108,6 +2113,11 @@ LC_UPDATE_VLAN			The Virtual Network Adapter "%S" driver has been reinstalled.
 LC_DELETE_VLAN			The Virtual Network Adapter "%S" has been deleted.
 LC_SET_PASSWORD			The password setting for connection to a client service has been changed.
 LC_TAP_NOT_FOUND		Cannot find the tun/tap driver for Mac OS X. Please install the tun/tap driver.
+LC_OIDC_START_INTERECTIVE_FLOW Interactive OIDC authentication flow starting.
+LC_OIDC_START_SILENT_FLOW Silent OIDC authentication flow starting (user: %s).
+LC_OIDC_OK				OIDC authentication succeeded (user: %s).
+LC_OIDC_FAIL			OIDC authentication failed (status=%u, reason=%s).
+LC_LOG_MESSAGE 			%S
 
 # (Eraser log)
 LE_START				Monitoring the directory "%S". If the amount of available free disk space becomes less than %S, the backup files for log files and configurations that are saved on the sub-directories of this directory will be automatically deleted in the order of oldest first. The amount of free disk space that determines when to start deletion can be modified by changing the "AutoDeleteCheckDiskFreeSpaceMin" item in the configuration file.

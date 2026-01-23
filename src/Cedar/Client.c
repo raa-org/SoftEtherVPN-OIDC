@@ -26,6 +26,11 @@
 #include "NullLan.h"
 #endif
 
+#include "Oidc/OidcClient.h"
+#ifdef	OS_WIN32
+#include "Oidc/OidcEmbededViewWin32.h"
+#endif	// OS_WIN32
+
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
@@ -44,8 +49,6 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Win32.h"
 
-#include <stdlib.h>
-
 static CLIENT *client = NULL;
 static LISTENER *cn_listener = NULL;
 static LOCK *cn_listener_lock = NULL;
@@ -53,6 +56,7 @@ static UINT64 cn_next_allow = 0;
 static LOCK *ci_active_sessions_lock = NULL;
 static UINT ci_num_active_sessions = 0;
 
+static bool StrListContains(LIST* list, const char* s);
 
 // In Windows 8 or later, change unreasonable setting of WCM to ensure normal VPN communication
 void CiDisableWcmNetworkMinimize(CLIENT *c)
@@ -1576,6 +1580,20 @@ void CnListenerProc(THREAD *thread, void *param)
 				{
 					CnCheckCert(s, p);
 				}
+#ifdef OS_WIN32
+				else if (StrCmpi(function, "oidc_open_window") == 0)
+				{
+					CnOidcOpenWindow(s, p);
+				}
+				else if (StrCmpi(function, "oidc_close_window") == 0)
+				{
+					CnOidcCloseWindow(s, p);
+				}
+				else if (StrCmpi(function, "oidc_purge_account_data") == 0)
+				{
+					CnOidcPurgeAccountData(s, p);
+				}
+#endif // OS_WIN32
 				else if (StrCmpi(function, "exit") == 0)
 				{
 #ifdef	OS_WIN32
@@ -1870,6 +1888,11 @@ bool CiHasAccountSensitiveInformation(BUF *b)
 	{
 		ret = true;
 	}
+	else if (a->ClientAuth->AuthType == CLIENT_AUTHTYPE_OIDC)
+	{
+		/* ID tokens are sensitive; treat like passwords for exports */
+		ret = true;
+	}
 
 	CiFreeClientCreateAccount(a);
 	Free(a);
@@ -1903,6 +1926,12 @@ bool CiEraseSensitiveInAccount(BUF *b)
 	else if (a->ClientAuth->AuthType == CLIENT_AUTHTYPE_PLAIN_PASSWORD)
 	{
 		ClearStr(a->ClientAuth->PlainPassword, sizeof(a->ClientAuth->PlainPassword));
+		ClearStr(a->ClientAuth->Username, sizeof(a->ClientAuth->Username));
+	}
+	else if (a->ClientAuth->AuthType == CLIENT_AUTHTYPE_OIDC)
+	{
+		/* Do not persist the bearer token in exported configs */
+		ClearStr(a->ClientAuth->OidcIdToken, sizeof(a->ClientAuth->OidcIdToken));
 		ClearStr(a->ClientAuth->Username, sizeof(a->ClientAuth->Username));
 	}
 
@@ -2416,6 +2445,37 @@ PACK *CiRpcDispatch(RPC *rpc, char *name, PACK *p)
 		}
 		CiFreeClientGetConnectionStatus(&a);
 	}
+	else if (StrCmpi(name, "OidcGetLoggedInUser") == 0)
+	{
+		RPC_OIDC_GET_LOGGED_IN_USER t;
+
+		InRpcOidcGetLoggedInUser(&t, p);
+
+		if (CtOidcGetLoggedInUser(c, &t) == false)
+		{
+			RpcError(ret, c->Err);
+		}
+		else
+		{
+			OutRpcOidcGetLoggedInUser(ret, &t);
+		}
+	}
+	else if (StrCmpi(name, "OidcLogoutAllAccounts") == 0)
+	{
+		bool forget = PackGetBool(p, "Forget");
+
+		RPC_OIDC_LOGOUT_ALL_RESULT t;
+		Zero(&t, sizeof(t));
+
+		if (CtOidcLogoutAllAccounts(c, forget, &t) == false)
+		{
+			RpcError(ret, c->Err);
+		}
+		else
+		{
+			OutRpcOidcLogoutAllResult(ret, &t);
+		}
+	}
 	else
 	{
 		FreePack(ret);
@@ -2785,6 +2845,77 @@ UINT CcUseSecure(REMOTE_CLIENT *r, RPC_USE_SECURE *sec)
 	FreePack(ret);
 
 	return err;
+}
+
+// Client-side RPC stubs (used by UI Helper)
+UINT CcOidcGetLoggedInUser(REMOTE_CLIENT* r, RPC_OIDC_GET_LOGGED_IN_USER* logged)
+{
+	PACK* p, * ret;
+	UINT err = 0;
+
+	if (r == NULL || logged == NULL)
+	{
+		return ERR_INTERNAL_ERROR;
+	}
+
+	p = NewPack();
+
+	ret = RpcCall(r->Rpc, "OidcGetLoggedInUser", p);
+
+	if (RpcIsOk(ret) == false)
+	{
+		err = RpcGetError(ret);
+	}
+	else
+	{
+		InRpcOidcGetLoggedInUser(logged, ret);
+	}
+
+	FreePack(ret);
+
+	return err;
+}
+
+UINT CcOidcLogoutAllAccountsEx(REMOTE_CLIENT* r, bool forget, RPC_OIDC_LOGOUT_ALL_RESULT* logout)
+{
+	PACK* p;
+	PACK* ret;
+	UINT err = 0;
+
+	if (r == NULL || logout == NULL)
+	{
+		return ERR_INTERNAL_ERROR;
+	}
+
+	Zero(logout, sizeof(*logout));
+
+	p = NewPack();
+	PackAddBool(p, "Forget", forget);
+
+	ret = RpcCall(r->Rpc, "OidcLogoutAllAccounts", p);
+
+	if (RpcIsOk(ret) == false)
+	{
+		err = RpcGetError(ret);
+	}
+	else
+	{
+		InRpcOidcLogoutAllResult(logout, ret);
+	}
+
+	FreePack(ret);
+
+	return err;
+}
+
+UINT CcOidcLogoutAllAccounts(REMOTE_CLIENT* r, RPC_OIDC_LOGOUT_ALL_RESULT* logout)
+{
+	return CcOidcLogoutAllAccountsEx(r, false, logout);
+}
+
+UINT CcOidcLogoutAndForgetAllAccounts(REMOTE_CLIENT* r, RPC_OIDC_LOGOUT_ALL_RESULT* logout)
+{
+	return CcOidcLogoutAllAccountsEx(r, true, logout);
 }
 
 // Get a next recommended virtual LAN card name
@@ -4137,6 +4268,60 @@ void OutRpcUseSecure(PACK *p, RPC_USE_SECURE *u)
 	PackAddInt(p, "DeviceId", u->DeviceId);
 }
 
+// RPC_OIDC_GET_LOGGED_IN_USER
+void InRpcOidcGetLoggedInUser(RPC_OIDC_GET_LOGGED_IN_USER* r, PACK* p)
+{
+	if (r == NULL || p == NULL)
+	{
+		return;
+	}
+
+	Zero(r, sizeof(RPC_OIDC_GET_LOGGED_IN_USER));
+
+	PackGetStr(p, "Username", r->Username, sizeof(r->Username));
+	r->HasLogin = PackGetBool(p, "HasLogin");
+}
+void OutRpcOidcGetLoggedInUser(PACK* p, const RPC_OIDC_GET_LOGGED_IN_USER* r)
+{
+	if (p == NULL || r == NULL)
+	{
+		return;
+	}
+
+	PackAddStr(p, "Username", r->Username);
+	PackAddBool(p, "HasLogin", r->HasLogin);
+}
+
+// RPC_OIDC_LOGOUT_ALL_RESULT
+void InRpcOidcLogoutAllResult(RPC_OIDC_LOGOUT_ALL_RESULT* r, PACK* p)
+{
+	if (r == NULL || p == NULL)
+	{
+		return;
+	}
+
+	Zero(r, sizeof(RPC_OIDC_LOGOUT_ALL_RESULT));
+
+	r->AnyUpdatedAccounts = PackGetBool(p, "AnyUpdatedAccounts");
+	r->AnyErrorsDuringLogout = PackGetBool(p, "AnyErrorsDuringLogout");
+
+	r->AnyBrowserDataPurged = PackGetBool(p, "AnyBrowserDataPurged");
+	r->AnyErrorsDuringPurge = PackGetBool(p, "AnyErrorsDuringPurge");
+}
+void OutRpcOidcLogoutAllResult(PACK* p, const RPC_OIDC_LOGOUT_ALL_RESULT* r)
+{
+	if (p == NULL || r == NULL)
+	{
+		return;
+	}
+
+	PackAddBool(p, "AnyUpdatedAccounts", r->AnyUpdatedAccounts);
+	PackAddBool(p, "AnyErrorsDuringLogout", r->AnyErrorsDuringLogout);
+
+	PackAddBool(p, "AnyBrowserDataPurged", r->AnyBrowserDataPurged);
+	PackAddBool(p, "AnyErrorsDuringPurge", r->AnyErrorsDuringPurge);
+}
+
 // Release the RPC_ENUM_OBJECT_IN_SECURE
 void CiFreeEnumObjectInSecure(RPC_ENUM_OBJECT_IN_SECURE *a)
 {
@@ -4462,6 +4647,17 @@ void InRpcClientAuth(CLIENT_AUTH *c, PACK *p)
 		PackGetStr(p, "SecurePrivateKeyName", c->SecurePrivateKeyName, sizeof(c->SecurePrivateKeyName));
 		break;
 
+	case CLIENT_AUTHTYPE_OIDC:
+		c->OidcConfig = ZeroMalloc(sizeof(*c->OidcConfig));
+
+		PackGetStr(p, "OidcIssuerUrl", c->OidcConfig->IssuerUrl, sizeof(c->OidcConfig->IssuerUrl));
+		PackGetStr(p, "OidcClientId", c->OidcConfig->ClientId, sizeof(c->OidcConfig->ClientId));
+		PackGetStr(p, "OidcRedirectUri", c->OidcConfig->RedirectUri, sizeof(c->OidcConfig->RedirectUri));
+		PackGetStr(p, "OidcScopes", c->OidcConfig->Scopes, sizeof(c->OidcConfig->Scopes));
+
+		PackGetStr(p, "OidcIdToken", c->OidcIdToken, sizeof(c->OidcIdToken));
+		break;
+
   case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		b = PackGetBuf(p, "ClientX");
 		if (b != NULL)
@@ -4517,6 +4713,21 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 	case CLIENT_AUTHTYPE_SECURE:
 		PackAddStr(p, "SecurePublicCertName", c->SecurePublicCertName);
 		PackAddStr(p, "SecurePrivateKeyName", c->SecurePrivateKeyName);
+		break;
+
+	case CLIENT_AUTHTYPE_OIDC:
+		if (c->OidcConfig != NULL)
+		{
+			OIDC_CONFIG* oidcConfig = c->OidcConfig;
+			PackAddStr(p, "OidcIssuerUrl", oidcConfig->IssuerUrl);
+			PackAddStr(p, "OidcClientId", oidcConfig->ClientId);
+			PackAddStr(p, "OidcRedirectUri", oidcConfig->RedirectUri);
+			PackAddStr(p, "OidcScopes", oidcConfig->Scopes);
+		}
+		if (!IsEmptyStr(c->OidcIdToken))
+		{
+			PackAddStr(p, "OidcIdToken", c->OidcIdToken);
+		}
 		break;
 
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
@@ -7347,6 +7558,174 @@ bool CtCreateAccount(CLIENT *c, RPC_CLIENT_CREATE_ACCOUNT *a, bool inner)
 	return true;
 }
 
+bool CtOidcGetLoggedInUser(CLIENT* c, RPC_OIDC_GET_LOGGED_IN_USER* l)
+{
+	UINT i;
+
+	if (c == NULL || l == NULL)
+	{
+		return false;
+	}
+
+	Zero(l, sizeof(RPC_OIDC_GET_LOGGED_IN_USER));
+
+	LockList(c->AccountList);
+
+	for (i = 0; i < LIST_NUM(c->AccountList); ++i)
+	{
+		ACCOUNT* a = LIST_DATA(c->AccountList, i);
+		if (a == NULL)
+		{
+			continue;
+		}
+
+		CLIENT_AUTH* auth = a->ClientAuth;
+		if (auth == NULL ||
+			auth->AuthType != CLIENT_AUTHTYPE_OIDC ||
+			auth->OidcConfig == NULL)
+		{
+			continue;
+		}
+
+		bool has = false;
+		OIDC_STATUS st = OidcClientHasStoredRefreshForUser(auth->Username, auth->OidcConfig, &has);
+
+		if (st == OIDC_OK && has)
+		{
+			l->HasLogin = true;
+			StrCpy(l->Username, sizeof(l->Username), auth->Username);
+
+			break;
+		}
+	}
+
+	UnlockList(c->AccountList);
+
+	return true;
+}
+
+bool CtOidcLogoutAllAccounts(CLIENT* c, bool purge_webview_data, RPC_OIDC_LOGOUT_ALL_RESULT* l)
+{
+	UINT i;
+	LIST* keys = NULL;
+
+	if (c == NULL || l == NULL)
+	{
+		return false;
+	}
+
+	Zero(l, sizeof(*l));
+
+	if (purge_webview_data)
+	{
+		keys = NewListFast(NULL); /* list of char* */
+	}
+
+	LockList(c->AccountList);
+
+	for (i = 0; i < LIST_NUM(c->AccountList); ++i)
+	{
+		ACCOUNT* a = (ACCOUNT*)LIST_DATA(c->AccountList, i);
+		CLIENT_AUTH* auth;
+		const OIDC_CONFIG* cfg;
+
+		if (a == NULL)
+		{
+			continue;
+		}
+
+		auth = a->ClientAuth;
+		if (auth == NULL || auth->AuthType != CLIENT_AUTHTYPE_OIDC || auth->OidcConfig == NULL)
+		{
+			continue;
+		}
+
+		cfg = auth->OidcConfig;
+
+		l->AnyUpdatedAccounts = true;
+
+		/* Clear refresh token (per-user) + clear in-memory id token */
+		{
+			OIDC_STATUS st = OidcClientClearRefreshForUser(auth->Username, cfg);
+			if (st != OIDC_OK && st != OIDC_ERR_STORAGE_NOT_FOUND)
+			{
+				l->AnyErrorsDuringLogout = true;
+			}
+
+			ClearStr(auth->OidcIdToken, sizeof(auth->OidcIdToken));
+		}
+
+		/* Collect per-config key for WebView2 purge (issuer|client_id -> sha1 hex) */
+		if (purge_webview_data && keys != NULL)
+		{
+			char key[OIDC_ACCOUNT_KEY_SHA256_HEX_BUF_SIZE];
+			Zero(key, sizeof(key));
+
+			if (OidcBuildAccountKey(key, sizeof(key), cfg->IssuerUrl, cfg->ClientId))
+			{
+				if (!StrListContains(keys, key))
+				{
+					Add(keys, CopyStr(key)); /* keys owns this string */
+				}
+			}
+			else
+			{
+				l->AnyErrorsDuringPurge = true;
+			}
+		}
+	}
+
+	UnlockList(c->AccountList);
+
+	/* Purge embedded UI (WebView2 cookies/storage) WITHOUT holding AccountList lock */
+	if (purge_webview_data && keys != NULL)
+	{
+		if (!OidcClientIsEmbeddedUiPurgeSupported())
+		{
+			l->AnyErrorsDuringPurge = true;
+		}
+		else
+		{
+			for (i = 0; i < LIST_NUM(keys); ++i)
+			{
+				char* key = (char*)LIST_DATA(keys, i);
+				if (key == NULL)
+				{
+					continue;
+				}
+
+				OIDC_STATUS st = OidcClientForgetEmbeddedUiDataByKey(key, 0);
+
+				if (st == OIDC_OK)
+				{
+					l->AnyBrowserDataPurged = true;
+				}
+				else
+				{
+					l->AnyErrorsDuringPurge = true;
+				}
+			}
+		}
+	}
+
+	/* Free collected keys */
+	if (keys != NULL)
+	{
+		for (i = 0; i < LIST_NUM(keys); ++i)
+		{
+			char* key = (char*)LIST_DATA(keys, i);
+			if (key != NULL)
+			{
+				Free(key);
+			}
+		}
+		ReleaseList(keys);
+		keys = NULL;
+	}
+
+	return true;
+}
+
 // Release the account acquisition structure
 void CiFreeClientGetAccount(RPC_CLIENT_GET_ACCOUNT *a)
 {
@@ -9131,14 +9510,21 @@ void CiFreeClientAuth(CLIENT_AUTH *auth)
 		return;
 	}
 
-	if (auth->ClientX != NULL)
-	{
-		FreeX(auth->ClientX);
-	}
-	if (auth->ClientK != NULL)
-	{
-		FreeK(auth->ClientK);
-	}
+    if (auth->ClientX != NULL)
+    {
+        FreeX(auth->ClientX);
+        auth->ClientX = NULL;
+    }
+    if (auth->ClientK != NULL)
+    {
+        FreeK(auth->ClientK);
+        auth->ClientK = NULL;
+    }
+    if (auth->OidcConfig != NULL)
+    {
+        Free(auth->OidcConfig);
+        auth->OidcConfig = NULL;
+    }
 
 	Free(auth);
 }
@@ -9224,6 +9610,7 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 	CLIENT_AUTH *a;
 	char *s;
 	BUF *b;
+	FOLDER* fo;
 	// Validate arguments
 	if (f == NULL)
 	{
@@ -9275,6 +9662,18 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 		CfgGetStr(f, "SecurePrivateKeyName", a->SecurePrivateKeyName, sizeof(a->SecurePrivateKeyName));
 		break;
 
+	case CLIENT_AUTHTYPE_OIDC:
+		fo = CfgGetFolder(f, "OIDC");
+		if (fo != NULL)
+		{
+			a->OidcConfig = ZeroMalloc(sizeof(OIDC_CONFIG));
+			CfgGetStr(fo, "IssuerUrl", a->OidcConfig->IssuerUrl, sizeof(a->OidcConfig->IssuerUrl));
+			CfgGetStr(fo, "ClientId", a->OidcConfig->ClientId, sizeof(a->OidcConfig->ClientId));
+			CfgGetStr(fo, "RedirectUri", a->OidcConfig->RedirectUri, sizeof(a->OidcConfig->RedirectUri));
+			CfgGetStr(fo, "Scopes", a->OidcConfig->Scopes, sizeof(a->OidcConfig->Scopes));
+		}
+		break;
+
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		b = CfgGetBuf(f, "ClientCert");
 		if (b != NULL)
@@ -9283,10 +9682,10 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 		}
 		FreeBuf(b);
 		if (CfgGetStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName, sizeof(a->OpensslEnginePrivateKeyName)))
-    {
-        a->ClientK = OpensslEngineToK(a->OpensslEnginePrivateKeyName, a->OpensslEngineName);
-    }
-    CfgGetStr(f, "OpensslEngineName", a->OpensslEngineName, sizeof(a->OpensslEngineName));
+		{
+			a->ClientK = OpensslEngineToK(a->OpensslEnginePrivateKeyName, a->OpensslEngineName);
+		}
+		CfgGetStr(f, "OpensslEngineName", a->OpensslEngineName, sizeof(a->OpensslEngineName));
 		break;
 	}
 
@@ -9797,6 +10196,7 @@ void CiWriteClientConfig(FOLDER *cc, CLIENT_CONFIG *config)
 void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 {
 	BUF *b;
+	FOLDER* fo;
 	// Validate arguments
 	if (f == NULL || a == NULL)
 	{
@@ -9837,6 +10237,17 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 	case CLIENT_AUTHTYPE_SECURE:
 		CfgAddStr(f, "SecurePublicCertName", a->SecurePublicCertName);
 		CfgAddStr(f, "SecurePrivateKeyName", a->SecurePrivateKeyName);
+		break;
+
+	case CLIENT_AUTHTYPE_OIDC:
+		fo = CfgCreateFolder(f, "OIDC");
+		if (a->OidcConfig && fo)
+		{
+			CfgAddStr(fo, "IssuerUrl", a->OidcConfig->IssuerUrl);
+			CfgAddStr(fo, "ClientId", a->OidcConfig->ClientId);
+			CfgAddStr(fo, "RedirectUri", a->OidcConfig->RedirectUri);
+			CfgAddStr(fo, "Scopes", a->OidcConfig->Scopes);
+		}
 		break;
 
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
@@ -10626,6 +11037,10 @@ void CtStartClient()
 	// Creating a client
 	client = CiNewClient();
 
+#ifdef	OS_WIN32
+	ServiceInitOidcUiBridge();
+#endif
+
 	// Start the Keep
 	CiInitKeep(client);
 
@@ -10782,4 +11197,565 @@ void CiClientStatusPrinter(SESSION *s, wchar_t *status)
 #endif	// OS_WIN32
 }
 
+// Service-side UI bridge that talks to the UI helper
 
+void ServiceInitOidcUiBridge(void)
+{
+	OIDC_UI_BRIDGE bridge;
+	Zero(&bridge, sizeof(bridge));
+
+	bridge.Open = CiNotifyHelperOpenOidcWindow;
+	bridge.WaitClosed = CiNotifyHelperWaitOidcWindowClosed;
+	bridge.Close = CiNotifyHelperCloseOidcWindow;
+	bridge.PurgeAccountData = CiNotifyHelperPurgeOidcAccountData;
+	bridge.UserData = NULL;
+
+	OidcClientSetUiBridge(&bridge);
+}
+// -----------------------------
+// OIDC helper notification
+// -----------------------------
+
+typedef struct CI_OIDC_HELPER_SESSION
+{
+	SOCK* Sock;
+	THREAD* Thread;
+	EVENT* ClosedEvent;
+} CI_OIDC_HELPER_SESSION;
+
+static LOCK* ci_oidc_helper_lock = NULL;
+static volatile LONG ci_oidc_helper_lock_inited = 0;
+
+static CI_OIDC_HELPER_SESSION* ci_oidc_helper = NULL;
+
+static CI_OIDC_HELPER_SESSION ci_oidc_helper_opening_sentinel;
+
+static void CiOidcHelperInitOnce(void)
+{
+	if (InterlockedCompareExchange(&ci_oidc_helper_lock_inited, 1, 0) == 0)
+	{
+		ci_oidc_helper_lock = NewLock();
+	}
+	else
+	{
+		while (ci_oidc_helper_lock == NULL)
+		{
+			SleepThread(1);
+		}
+	}
+}
+
+static bool CiOidcHelperReserveSlot(void)
+{
+	CiOidcHelperInitOnce();
+
+	bool ok = false;
+	Lock(ci_oidc_helper_lock);
+	{
+		if (ci_oidc_helper == NULL)
+		{
+			ci_oidc_helper = &ci_oidc_helper_opening_sentinel; // RESERVED
+			ok = true;
+		}
+	}
+	Unlock(ci_oidc_helper_lock);
+
+	return ok;
+}
+
+static void CiOidcHelperRollbackSlotIfReserved(void)
+{
+	Lock(ci_oidc_helper_lock);
+	{
+		if (ci_oidc_helper == &ci_oidc_helper_opening_sentinel)
+		{
+			ci_oidc_helper = NULL;
+		}
+	}
+	Unlock(ci_oidc_helper_lock);
+}
+
+
+// Thread that waits for a single "OIDC window closed" notification
+// (or socket close) from the helper.
+static void CiNotifyHelperOidcThread(THREAD* thread, void* param)
+{
+	CI_OIDC_HELPER_SESSION* sess = (CI_OIDC_HELPER_SESSION*)param;
+
+	if (thread == NULL || sess == NULL) return;
+
+	NoticeThreadInit(thread);
+
+	while (true)
+	{
+		PACK* p = RecvPack(sess->Sock);
+		if (p == NULL)
+		{
+			break;
+		}
+
+		bool closed = PackGetBool(p, "Closed");
+		FreePack(p);
+
+		if (closed)
+		{
+			break;
+		}
+	}
+
+	if (sess->ClosedEvent != NULL)
+	{
+		Set(sess->ClosedEvent);
+	}
+}
+
+// Open an OIDC window in the helper via client notification service.
+// account_key expect hex SHA-256/512
+// Returns true on success, false on failure.
+bool CiNotifyHelperOpenOidcWindow(const char* url, const char* account_key, void* user_data)
+{
+	(void)user_data;
+
+	SOCK* s;
+	PACK* p;
+	THREAD* t;
+	CI_OIDC_HELPER_SESSION* helper_session;
+
+	if (url == NULL || url[0] == '\0')
+	{
+		return false;
+	}
+
+	// Require key for embedded UI (no key -> no open)
+	if (account_key == NULL || account_key[0] == '\0')
+		return false;
+
+	if (CiOidcHelperReserveSlot() == false)
+	{
+		return false;
+	}
+
+	// Connect to the client notification service.
+	s = CncConnectEx(5000);
+	if (s == NULL)
+	{
+		CiOidcHelperRollbackSlotIfReserved();
+		return false;
+	}
+
+	// Send a command to the helper: open OIDC window with this URL.
+	p = NewPack();
+	PackAddStr(p, "function", "oidc_open_window");
+	PackAddStr(p, "Url", url);
+	PackAddStr(p, "AccountKey", account_key);
+
+	if (SendPack(s, p) == false)
+	{
+		FreePack(p);
+		Disconnect(s);
+		ReleaseSock(s);
+		CiOidcHelperRollbackSlotIfReserved();
+		return false;
+	}
+	FreePack(p);
+
+	// --- wait for "UiOpened" ACK from helper ---
+	PACK* ack = RecvPack(s);
+	if (ack == NULL)
+	{
+		Disconnect(s);
+		ReleaseSock(s);
+		CiOidcHelperRollbackSlotIfReserved();
+		return false;
+	}
+
+	bool ui_opened = PackGetBool(ack, "UiOpened");
+
+	bool bad_req = PackGetBool(ack, "BadRequest");
+	bool key_required = PackGetBool(ack, "AccountKeyRequired");
+	bool ui_supported = PackGetBool(ack, "UiSupported");      // may be missing => false by default
+	bool ui_already_open = PackGetBool(ack, "UiAlreadyOpen");
+	bool open_failed = PackGetBool(ack, "OpenFailed");
+
+	FreePack(ack);
+
+	if (ui_opened == false)
+	{
+		Disconnect(s);
+		ReleaseSock(s);
+		CiOidcHelperRollbackSlotIfReserved();
+		return false;
+	}
+
+	// Prepare session object and a helper thread that waits for close notification.
+	helper_session = ZeroMalloc(sizeof(CI_OIDC_HELPER_SESSION));
+	helper_session->Sock = s;
+	helper_session->ClosedEvent = NewEvent();
+
+	t = NewThread(CiNotifyHelperOidcThread, helper_session);
+	WaitThreadInit(t);
+	helper_session->Thread = t; // keep ownership; Close() will Wait/Release
+
+	Lock(ci_oidc_helper_lock);
+	{
+		if (ci_oidc_helper == &ci_oidc_helper_opening_sentinel)
+		{
+			ci_oidc_helper = helper_session; // COMMIT
+			helper_session = NULL;           // ownership moved to global
+		}
+	}
+	Unlock(ci_oidc_helper_lock);
+
+	if (helper_session != NULL)
+	{
+		Disconnect(s);
+		if (t != NULL)
+		{ 
+			WaitThread(t, INFINITE);
+			ReleaseThread(t);
+		}
+		if (helper_session->ClosedEvent != NULL)
+		{ 
+			ReleaseEvent(helper_session->ClosedEvent);
+		}
+		if (s != NULL)
+		{
+			ReleaseSock(s);
+		}
+		Free(helper_session);
+
+		return false;
+	}
+
+	return true;
+}
+
+// Poll until helper reports that the OIDC window has been closed.
+// timeout_ms == 0 => non-blocking poll.
+// Returns true if window is closed, false otherwise.
+bool CiNotifyHelperWaitOidcWindowClosed(UINT timeout_ms, void* user_data)
+{
+	(void)user_data;
+
+	if (ci_oidc_helper_lock == NULL)
+	{
+		return true; // UI bridge not usable => treat as closed
+	}
+
+	EVENT* e = NULL;
+	bool closed = false;
+
+	Lock(ci_oidc_helper_lock);
+	{
+		if (ci_oidc_helper == NULL)
+		{
+			closed = true; // no active session => closed
+		}
+		else if (ci_oidc_helper != &ci_oidc_helper_opening_sentinel)
+		{
+			e = ci_oidc_helper->ClosedEvent;
+		}
+		// opening_sentinel => still opening => closed remains false
+	}
+	Unlock(ci_oidc_helper_lock);
+
+	if (closed)
+	{
+		return true;
+	}
+
+	if (e == NULL)
+	{
+		return false;
+	}
+
+	return Wait(e, timeout_ms);
+}
+
+// Ask the helper to force-close the embedded OIDC window if one is currently open (not account-scoped).
+// Returns true if there was an active session, false otherwise.
+bool CiNotifyHelperCloseOidcWindow(void* user_data)
+{
+	(void)user_data;
+
+	CI_OIDC_HELPER_SESSION* sess = NULL;
+
+	if (ci_oidc_helper_lock == NULL)
+	{
+		return false;
+	}
+
+	// Detach the current OIDC helper session from the global state so that
+	// concurrent calls do not touch already freed resources.
+	Lock(ci_oidc_helper_lock);
+	{
+		sess = ci_oidc_helper;
+		ci_oidc_helper = NULL;
+	}
+	Unlock(ci_oidc_helper_lock);
+
+	if (sess == NULL)
+	{
+		return false;
+	}
+
+	if (sess == &ci_oidc_helper_opening_sentinel)
+	{
+		// The session was “in the process of opening”.
+		// global already reset to NULL; Open() will see this during the commit stage
+		// and will clean up the resources on its own.
+		return true;
+	}
+
+	// Send close request via a NEW connection
+	{
+        SOCK* close_sock = CncConnectEx(2000); // timeout ms (not a port)
+        if (close_sock != NULL)
+        {
+            PACK* close_pack = NewPack();
+            PackAddStr(close_pack, "function", "oidc_close_window");
+            SendPack(close_sock, close_pack);
+            FreePack(close_pack);
+
+            Disconnect(close_sock);
+            ReleaseSock(close_sock);
+        }
+    }
+
+	// Tear down the original "open" session socket to unblock RecvPack()
+	if (sess->Sock != NULL)
+	{
+		Disconnect(sess->Sock);
+	}
+
+	if (sess->Thread != NULL)
+	{
+		WaitThread(sess->Thread, INFINITE);
+		ReleaseThread(sess->Thread);
+	}
+
+	if (sess->ClosedEvent != NULL)
+	{
+		ReleaseEvent(sess->ClosedEvent);
+	}
+
+	if (sess->Sock != NULL)
+	{
+		ReleaseSock(sess->Sock);
+	}
+
+	Free(sess);
+
+	return true;
+}
+
+// Request the UI helper to purge per-account embedded WebView2 data.
+bool CiNotifyHelperPurgeOidcAccountData(const char* account_key, UINT timeout_ms, void* user_data)
+{
+	(void)user_data;
+
+	if (account_key == NULL || account_key[0] == '\0')
+		return false;
+
+	SOCK* s = CncConnectEx(5000);
+	if (s == NULL)
+		return false;
+
+	PACK* req = NewPack();
+	PackAddStr(req, "function", "oidc_purge_account_data");
+	PackAddStr(req, "AccountKey", account_key);
+	PackAddInt(req, "TimeoutMs", timeout_ms);
+
+	if (SendPack(s, req) == false)
+	{
+		FreePack(req);
+		Disconnect(s);
+		ReleaseSock(s);
+		return false;
+	}
+	FreePack(req);
+
+	PACK* resp = RecvPack(s);
+	Disconnect(s);
+	ReleaseSock(s);
+
+	if (resp == NULL)
+		return false;
+
+	bool ok = PackGetBool(resp, "Ok");
+	FreePack(resp);
+
+	return ok;
+}
+
+// Open embedded OIDC WebView and block until it is closed.
+// This runs on a dedicated Cn listener thread per connection.
+void CnOidcOpenWindow(SOCK * s, PACK * p)
+{
+	char url[MAX_SIZE];
+	char account_key[129];
+
+	if (s == NULL || p == NULL)
+	{
+		return;
+	}
+
+	Zero(url, sizeof(url));
+	Zero(account_key, sizeof(account_key));
+
+	// Extract URL from the incoming pack
+	if (PackGetStr(p, "Url", url, sizeof(url)) == false || IsEmptyStr(url))
+	{
+		// Malformed request, send minimal response and exit
+		PACK * resp = NewPack();
+		PackAddBool(resp, "UiOpened", false);
+		PackAddBool(resp, "BadRequest", true);
+		SendPack(s, resp);
+		FreePack(resp);
+		return;
+	}
+
+	// Extract AccountKey
+	if (PackGetStr(p, "AccountKey", account_key, sizeof(account_key)) == false || IsEmptyStr(account_key))
+	{
+		PACK* resp = NewPack();
+		PackAddBool(resp, "UiOpened", false);
+		PackAddBool(resp, "AccountKeyRequired", true);
+		SendPack(s, resp);
+		FreePack(resp);
+		return;
+	}
+
+	// Check if embedded view is supported on this system
+	if (OidcEmbededView_IsSupported() == 0)
+	{
+		PACK * resp = NewPack();
+		PackAddBool(resp, "UiOpened", false);
+		PackAddBool(resp, "UiSupported", false);
+		SendPack(s, resp);
+		FreePack(resp);
+		return;
+	}
+
+	if (OidcEmbededView_IsOpen())
+	{
+		PACK* resp = NewPack();
+		PackAddBool(resp, "UiOpened", false);
+		PackAddBool(resp, "UiAlreadyOpen", true);
+		SendPack(s, resp);
+		FreePack(resp);
+		return;
+	}
+
+	// Try to open the embedded WebView window
+	if (OidcEmbededView_OpenWithAccountKey(url, account_key, NULL, 0) != 1)
+	{
+		PACK* resp = NewPack();
+		PackAddBool(resp, "UiOpened", false);
+		PackAddBool(resp, "OpenFailed", true);
+		SendPack(s, resp);
+		FreePack(resp);
+		return;
+	}
+
+	PACK* ack = NewPack();
+	PackAddBool(ack, "UiOpened", true);
+	SendPack(s, ack);
+	FreePack(ack);
+
+	// Wait until the OIDC window is closed.
+	//  1  -> closed
+	//  0  -> timeout, keep waiting
+	// <0  -> fatal error; treat as "closed with error".
+	while (true)
+	{
+		int r = OidcEmbededView_WaitClosed(500);
+
+		if (r != 0)
+		{
+			// r == 1: normal close, r < 0: error
+			break;
+		}
+	}
+
+	// Clean up WebView resources on UI side
+	OidcEmbededView_Close();
+	
+	// Notify the service that the window is no longer open.
+	// CiOidcHelperNotifyThread only needs "some" pack to arrive.
+	PACK * resp = NewPack();
+	PackAddBool(resp, "Closed", true);
+	SendPack(s, resp);
+	FreePack(resp);
+}
+
+// Optional "force close" entry point from service.
+// With the current design it is not strictly required,
+// because UiHelperOidcOpenWindow already blocks until the window closes
+// and then notifies the service. You can keep this as a stub for now.
+void CnOidcCloseWindow(SOCK* s, PACK* p)
+{
+	(void)p;
+
+	if (OidcEmbededView_IsOpen())
+	{
+		OidcEmbededView_RequestClose();
+	}
+
+	if (s != NULL)
+	{
+		PACK* resp = NewPack();
+		PackAddBool(resp, "ClosedAck", true);
+		SendPack(s, resp);
+		FreePack(resp);
+	}
+}
+
+void CnOidcPurgeAccountData(SOCK* s, PACK* p)
+{
+	char account_key[129];
+	UINT timeout_ms = 0;
+
+	Zero(account_key, sizeof(account_key));
+
+	if (s == NULL || p == NULL)
+		return;
+
+	if (PackGetStr(p, "AccountKey", account_key, sizeof(account_key)) == false || IsEmptyStr(account_key))
+	{
+		PACK* resp = NewPack();
+		PackAddBool(resp, "Ok", false);
+		PackAddBool(resp, "AccountKeyRequired", true);
+		SendPack(s, resp);
+		FreePack(resp);
+		return;
+	}
+
+	timeout_ms = PackGetInt(p, "TimeoutMs");
+
+	bool ok = (OidcEmbededView_PurgeAccountData(account_key, timeout_ms) != 0);
+
+	PACK* resp = NewPack();
+	PackAddBool(resp, "Ok", ok);
+	SendPack(s, resp);
+	FreePack(resp);
+}
+
+static bool StrListContains(LIST* list, const char* s)
+{
+	UINT i;
+	if (list == NULL || s == NULL)
+	{
+		return false;
+	}
+
+	for (i = 0; i < LIST_NUM(list); ++i)
+	{
+		char* x = (char*)LIST_DATA(list, i);
+		if (x != NULL && StrCmpi(x, s) == 0)
+		{
+			return true;
+		}
+	}
+	return false;
+}

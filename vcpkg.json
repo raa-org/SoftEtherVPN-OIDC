@@ -3,8 +3,10 @@
   "name": "softether-vpn",
   "version-string": "5.02",
   "dependencies": [
+    "webview2",
     "libsodium",
     "openssl",
-    "zlib"
+    "zlib",
+    "jansson"
   ]
 }

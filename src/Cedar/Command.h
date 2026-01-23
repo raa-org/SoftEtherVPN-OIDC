@@ -546,6 +546,7 @@ UINT PsUserCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserRadiusSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+UINT PsUserOidcSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserPolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);

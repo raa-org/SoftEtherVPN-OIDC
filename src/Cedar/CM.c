@@ -32,6 +32,10 @@
 #include "../PenCore/resource.h"
 
 #include <shellapi.h>
+#include <windows.h>
+#include <windowsx.h>
+
+static void UpdateAuthControls(HWND hDlg);
 
 // Get the proxy server settings from the registry string of IE
 bool CmGetProxyServerNameAndPortFromIeProxyRegStr(char *name, UINT name_size, UINT *port, char *str, char *server_type)
@@ -7269,6 +7273,7 @@ void CmEditAccountDlgInit(HWND hWnd, CM_ACCOUNT *a)
 		// Authentication using a smart card
 		CbAddStr(hWnd, C_TYPE, _UU("PW_TYPE_4"), CLIENT_AUTHTYPE_SECURE);
 	}
+	CbAddStr(hWnd, C_TYPE, _UU("PW_TYPE_6"), CLIENT_AUTHTYPE_OIDC);
 
 	// Select an authentication
 	CbSelect(hWnd, C_TYPE, a->ClientAuth->AuthType);
@@ -7344,6 +7349,7 @@ void CmEditAccountDlgInit(HWND hWnd, CM_ACCOUNT *a)
 	// Display update
 	a->Inited = true;
 	CmEditAccountDlgUpdate(hWnd, a);
+	UpdateAuthControls(hWnd);
 }
 
 // Account editing dialog procedure
@@ -7365,6 +7371,11 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 	{
 	case WM_INITDIALOG:
 		CmEditAccountDlgInit(hWnd, a);
+
+		ShowWindow(GetDlgItem(hWnd, B_OAUTH_LOGIN), SW_HIDE);
+		EnableWindow(GetDlgItem(hWnd, B_OAUTH_LOGIN), FALSE);
+		UpdateAuthControls(hWnd);
+
 		if (a->EditMode == false && a->LinkMode == false && a->NatMode == false)
 		{
 			SetTimer(hWnd, 1, 100, NULL);
@@ -7396,6 +7407,14 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 		}
 		break;
 	case WM_COMMAND:
+
+		if (LOWORD(wParam) == C_TYPE && HIWORD(wParam) == CBN_SELCHANGE)
+		{
+			CmEditAccountDlgUpdate(hWnd, a);
+			UpdateAuthControls(hWnd);
+			break;
+		}
+
 		switch (wParam)
 		{
 		case R_DISABLE_NATT:
@@ -7452,6 +7471,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 		case E_RETRY_SPAN:
 		case R_INFINITE:
 			CmEditAccountDlgUpdate(hWnd, a);
+			UpdateAuthControls(hWnd);
 			break;
 		}
 		switch (HIWORD(wParam))
@@ -7493,6 +7513,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 		if (HIWORD(wParam) == 0)
 		{
 			CmEditAccountDlgUpdate(hWnd, a);
+			UpdateAuthControls(hWnd);
 		}
 		switch (wParam)
 		{
@@ -7510,6 +7531,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 		case IDOK:
 			CmEditAccountDlgUpdate(hWnd, a);
 			CmEditAccountDlgOnOk(hWnd, a);
+			UpdateAuthControls(hWnd);
 			break;
 		case IDCANCEL:
 			Close(hWnd);
@@ -7532,6 +7554,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 				}
 				CmEditAccountDlgStartEnumHub(hWnd, a);
 				CmEditAccountDlgUpdate(hWnd, a);
+				UpdateAuthControls(hWnd);
 			}
 			break;
 		case B_IE:
@@ -7540,6 +7563,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 			{
 				CmProxyDlgUseForIE(hWnd, a->ClientOption);
 				CmEditAccountDlgUpdate(hWnd, a);
+				UpdateAuthControls(hWnd);
 				MsgBox(hWnd, MB_ICONINFORMATION, _UU("CM_PROXY_FROM_IE"));
 			}
 			break;
@@ -7562,6 +7586,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 				{
 					a->ServerCert = x;
 					CmEditAccountDlgUpdate(hWnd, a);
+					UpdateAuthControls(hWnd);
 				}
 			}
 			else
@@ -7571,6 +7596,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 					FreeX(a->ServerCert);
 					a->ServerCert = NULL;
 					CmEditAccountDlgUpdate(hWnd, a);
+					UpdateAuthControls(hWnd);
 				}
 			}
 			break;
@@ -7612,6 +7638,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 					}
 				}
 				CmEditAccountDlgUpdate(hWnd, a);
+				UpdateAuthControls(hWnd);
 			}
 			break;
 		case B_REGIST_CLIENT_CERT:
@@ -7625,6 +7652,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 						a->ClientAuth->ClientX = x;
 						a->ClientAuth->ClientK = k;
 						CmEditAccountDlgUpdate(hWnd, a);
+						UpdateAuthControls(hWnd);
 					}
 				}
 				else
@@ -7636,6 +7664,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 						a->ClientAuth->ClientX = NULL;
 						a->ClientAuth->ClientK = NULL;
 						CmEditAccountDlgUpdate(hWnd, a);
+						UpdateAuthControls(hWnd);
 					}
 				}
 			}
@@ -7649,6 +7678,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 					StrCpy(a->ClientAuth->SecurePublicCertName, sizeof(a->ClientAuth->SecurePublicCertName), cert);
 					StrCpy(a->ClientAuth->SecurePrivateKeyName, sizeof(a->ClientAuth->SecurePrivateKeyName), priv);
 					CmEditAccountDlgUpdate(hWnd, a);
+					UpdateAuthControls(hWnd);
 				}
 			}
 			break;
@@ -7657,6 +7687,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 			if (CmDetailDlg(hWnd, a))
 			{
 				CmEditAccountDlgUpdate(hWnd, a);
+				UpdateAuthControls(hWnd);
 			}
 			break;
 		case B_CHANGE_PASSWORD:
@@ -7678,6 +7709,7 @@ UINT CmEditAccountDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, voi
 			{
 			case LVN_ITEMCHANGED:
 				CmEditAccountDlgUpdate(hWnd, a);
+				UpdateAuthControls(hWnd);
 				break;
 			}
 			break;
@@ -8841,6 +8873,7 @@ void CmEditAccountDlgOnOk(HWND hWnd, CM_ACCOUNT *a)
 	}
 
 	CmEditAccountDlgUpdate(hWnd, a);
+	UpdateAuthControls(hWnd);
 
 	if (a->LinkMode == false && a->NatMode == false)
 	{
@@ -12660,7 +12693,61 @@ void *CmUpdateJumpList(UINT start_id)
 	return h;
 }
 
+static BOOL IsAuthTypeOauth2(HWND hDlg)
+{
+	int idx = (int)SendDlgItemMessage(hDlg, C_TYPE, CB_GETCURSEL, 0, 0);
+	if (idx == CB_ERR) return FALSE;
+	int type = (int)SendDlgItemMessage(hDlg, C_TYPE, CB_GETITEMDATA, (WPARAM)idx, 0);
+	return (type == CLIENT_AUTHTYPE_OIDC);
+}
 
+static void PlaceOauthButton(HWND hDlg)
+{
+	HWND hBtn = GetDlgItem(hDlg, B_OAUTH_LOGIN);
+	HWND hUserE = GetDlgItem(hDlg, E_USERNAME);
+	if (!hBtn || !hUserE) return;
+
+	RECT r = { 0 };
+	GetWindowRect(hUserE, &r);
+	MapWindowPoints(NULL, hDlg, (LPPOINT)&r, 2);
+
+	int left = r.left;
+	int top = r.top;
+	int width = r.right - r.left;
+	int height = r.bottom - r.top;
+
+	SetWindowPos(hBtn, NULL, left, top, width, height, SWP_NOZORDER);
+}
+
+static void UpdateAuthControls(HWND hDlg)
+{
+	BOOL isOauth2 = IsAuthTypeOauth2(hDlg);
+
+	HWND hBtn = GetDlgItem(hDlg, B_OAUTH_LOGIN);
+	if (hBtn)
+	{
+		if (isOauth2)
+		{
+			PlaceOauthButton(hDlg);
+			ShowWindow(hBtn, SW_SHOW);
+			EnableWindow(hBtn, TRUE);
+		}
+		else
+		{
+			ShowWindow(hBtn, SW_HIDE);
+			EnableWindow(hBtn, FALSE);
+		}
+	}
+
+	const int ids[] = { S_USERNAME, E_USERNAME, S_PASSWORD, E_PASSWORD };
+	for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i)
+	{
+		HWND h = GetDlgItem(hDlg, ids[i]);
+		if (!h) continue;
+		ShowWindow(h, isOauth2 ? SW_HIDE : SW_SHOW);
+		EnableWindow(h, !isOauth2);
+	}
+}
 
 #endif	// WIN32
 

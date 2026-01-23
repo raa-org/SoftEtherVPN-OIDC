@@ -21,10 +21,19 @@ set_target_properties(cedar
 
 target_link_libraries(cedar PUBLIC mayaqua)
 
-cmake_host_system_information(RESULT HAS_SSE2 QUERY HAS_SSE2)
-
-set(BLAKE2_SRC_PATH $<IF:$<BOOL:${HAS_SSE2}>,${TOP_DIRECTORY}/3rdparty/BLAKE2/sse,${TOP_DIRECTORY}/3rdparty/BLAKE2/ref>)
-set(BLAKE2_SRC $<IF:$<BOOL:${HAS_SSE2}>,${BLAKE2_SRC_PATH}/blake2s.c,${BLAKE2_SRC_PATH}/blake2s-ref.c>)
+if(SKIP_CPU_FEATURES)
+  set(BLAKE2_SRC_PATH ${TOP_DIRECTORY}/3rdparty/BLAKE2/ref)
+  set(BLAKE2_SRC      ${BLAKE2_SRC_PATH}/blake2s-ref.c)
+else()
+  cmake_host_system_information(RESULT HAS_SSE2 QUERY HAS_SSE2)
+  if(HAS_SSE2)
+    set(BLAKE2_SRC_PATH ${TOP_DIRECTORY}/3rdparty/BLAKE2/sse)
+    set(BLAKE2_SRC      ${BLAKE2_SRC_PATH}/blake2s.c)
+  else()
+    set(BLAKE2_SRC_PATH ${TOP_DIRECTORY}/3rdparty/BLAKE2/ref)
+    set(BLAKE2_SRC      ${BLAKE2_SRC_PATH}/blake2s-ref.c)
+  endif()
+endif()
 
 target_include_directories(cedar PUBLIC ${BLAKE2_SRC_PATH})
 target_sources(cedar PRIVATE ${BLAKE2_SRC})
@@ -38,6 +47,47 @@ endif()
 if(VCPKG_TARGET_TRIPLET)
   find_package(unofficial-sodium CONFIG REQUIRED)
   target_link_libraries(cedar PUBLIC unofficial-sodium::sodium)
+
+  # --- LibJWT via FetchContent, wired to vcpkg deps ---
+  include(FetchContent)
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+  # Use vcpkg's OpenSSL + Jansson
+  find_package(OpenSSL REQUIRED)
+  find_package(jansson CONFIG REQUIRED)
+
+  # libjwt links to a target/library named "jansson".
+  # Create an alias so that "jansson" resolves to vcpkg's jansson::jansson
+  if (TARGET jansson::jansson AND NOT TARGET jansson)
+    add_library(jansson ALIAS jansson::jansson)
+  endif()
+
+  # Force OpenSSL backend in libjwt, disable others
+  set(WITH_OPENSSL ON  CACHE BOOL "" FORCE)
+  set(WITH_GNUTLS  OFF CACHE BOOL "" FORCE)
+  set(WITH_MBEDTLS OFF CACHE BOOL "" FORCE)
+  set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(BUILD_TESTING  OFF CACHE BOOL "" FORCE)
+
+  FetchContent_Declare(
+    libjwt
+    GIT_REPOSITORY https://github.com/benmcollins/libjwt.git
+    GIT_TAG v1.17.2
+  )
+  FetchContent_GetProperties(libjwt)
+  if(NOT libjwt_POPULATED)
+    FetchContent_Populate(libjwt)
+    add_subdirectory(${libjwt_SOURCE_DIR} ${libjwt_BINARY_DIR} EXCLUDE_FROM_ALL)
+  endif()
+
+  # Link cedar to libjwt; PUBLIC so final exe gets it automatically
+  if (TARGET LibJWT::jwt)
+    target_link_libraries(cedar PUBLIC LibJWT::jwt)
+  elseif (TARGET jwt)
+    target_link_libraries(cedar PUBLIC jwt)
+  else()
+    message(FATAL_ERROR "libjwt fetched but CMake target not found (expected LibJWT::jwt or jwt).")
+  endif()
 else()
   find_package(PkgConfig REQUIRED)
   pkg_search_module(SODIUM libsodium REQUIRED)
@@ -48,7 +98,52 @@ else()
     # TODO: investigate why on ppc64le the use of SODIUM_LINK_LIBRARIES causes undefined references to libsodium functions.
     target_link_libraries(cedar PUBLIC ${SODIUM_LIBRARIES})
   endif()
+
+  # libjwt - brings jansson & openssl transitively via pkg-config
+  pkg_check_modules(LIBJWT REQUIRED libjwt)
+  target_include_directories(cedar PRIVATE ${LIBJWT_INCLUDE_DIRS})
+  target_link_libraries(cedar PRIVATE ${LIBJWT_LIBRARIES})
 endif()
+
+set(OIDC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Oidc")
+
+target_sources(cedar PRIVATE
+    ${OIDC_DIR}/OidcDefs.h
+    ${OIDC_DIR}/OidcLog.h
+    ${OIDC_DIR}/OidcClient.h
+    ${OIDC_DIR}/OidcClient.c
+    ${OIDC_DIR}/OidcServer.h
+    ${OIDC_DIR}/OidcServer.c
+    ${OIDC_DIR}/OidcClientCore.h
+    ${OIDC_DIR}/OidcClientCore.c
+    ${OIDC_DIR}/OidcHttp.h
+    ${OIDC_DIR}/OidcHttp.c
+    ${OIDC_DIR}/OidcLoopback.h
+    ${OIDC_DIR}/OidcLoopback.c
+    ${OIDC_DIR}/OidcUrlEncoding.h
+    ${OIDC_DIR}/OidcUrlEncoding.c
+    ${OIDC_DIR}/OidcSecureStore.h
+    ${OIDC_DIR}/OidcPkce.h
+    ${OIDC_DIR}/OidcPkce.c
+    ${OIDC_DIR}/OidcInteractiveUI.h
+    ${OIDC_DIR}/OidcJwt.h
+    ${OIDC_DIR}/OidcJwt.c
+)
+
+if (WIN32)
+    target_sources(cedar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Oidc/OidcSecureStoreWin32.c)
+
+    target_sources(cedar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Oidc/OidcInteractiveUIWin32.c)
+    target_sources(cedar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Oidc/OidcEmbededViewWin32.h)
+    target_sources(cedar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Oidc/OidcEmbededViewWin32.cpp)
+else()
+    target_sources(cedar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Oidc/OidcSecureStoreStub.c)
+
+    target_sources(cedar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Oidc/OidcInteractiveUIStub.c)
+endif()
+
+
+target_include_directories(cedar PRIVATE ${OIDC_DIR})
 
 if(WIN32)
   set_target_properties(cedar
@@ -58,7 +153,52 @@ if(WIN32)
   )
 
   target_include_directories(cedar PRIVATE winpcap)
-  target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib)
+  target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib shell32.lib ole32.lib crypt32.lib)
+
+  # Prefer vcpkg's imported target if available
+  find_package(Microsoft.Web.WebView2 CONFIG QUIET)
+  if (TARGET Microsoft.Web.WebView2::WebView2Loader OR TARGET Microsoft.Web.WebView2::WebView2)
+    # Link against the vcpkg-provided target
+    if (TARGET Microsoft.Web.WebView2::WebView2Loader)
+      target_link_libraries(cedar PRIVATE Microsoft.Web.WebView2::WebView2Loader ole32)
+    else()
+      target_link_libraries(cedar PRIVATE Microsoft.Web.WebView2::WebView2 ole32)
+    endif()
+
+  else()
+    # Fallback
+    set(WEBVIEW2_SDK_ROOT "" CACHE PATH "Path to Microsoft.Web.WebView2 build/native directory")
+
+    set(_WV2_CANDIDATE_DIRS
+            "${WEBVIEW2_SDK_ROOT}"
+            "$ENV{USERPROFILE}/.nuget/packages/microsoft.web.webview2/*/build/native"
+            "${CMAKE_SOURCE_DIR}/3rdparty/Microsoft.Web.WebView2/build/native"
+    )
+
+    set(_WV2_SEARCH_DIRS "")
+    foreach(dir IN LISTS _WV2_CANDIDATE_DIRS)
+      file(GLOB _m "${dir}")
+      list(APPEND _WV2_SEARCH_DIRS ${_m})
+    endforeach()
+
+    find_path(WEBVIEW2_INCLUDE_DIR
+            WebView2.h
+            PATH_SUFFIXES include
+            PATHS ${_WV2_SEARCH_DIRS}
+            REQUIRED
+    )
+
+    # Accept both static and DLL import lib names
+    find_library(WEBVIEW2_LOADER_LIB
+            NAMES WebView2LoaderStatic WebView2Loader WebView2Loader.dll.lib
+            PATH_SUFFIXES x64 X64 lib
+            PATHS ${_WV2_SEARCH_DIRS}
+            REQUIRED
+    )
+
+    target_include_directories(cedar PRIVATE ${WEBVIEW2_INCLUDE_DIR})
+    target_link_libraries(cedar PRIVATE ${WEBVIEW2_LOADER_LIB} ole32)
+  endif()
 endif()
 
 if(UNIX)

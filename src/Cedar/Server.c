@@ -4059,6 +4059,7 @@ void SiWriteUserCfg(FOLDER *f, USER *u)
 	AUTHNT *nt;
 	AUTHUSERCERT *usercert;
 	AUTHROOTCERT *rootcert;
+	AUTHOIDC *o;
 	// Validate arguments
 	if (f == NULL || u == NULL)
 	{
@@ -4133,6 +4134,15 @@ void SiWriteUserCfg(FOLDER *f, USER *u)
 					CfgAddUniStr(f, "AuthCommonName", rootcert->CommonName);
 				}
 				break;
+
+			case AUTHTYPE_OIDC:
+				o = (AUTHOIDC *)u->AuthData;
+				CfgAddBool(f, "AuthOidcTestMode", o->TestMode);
+				if (o->Issuer != NULL)           { CfgAddStr(f, "AuthOidcIssuer", o->Issuer); }
+				if (o->ClientId != NULL)         { CfgAddStr(f, "AuthOidcClientId", o->ClientId); }
+				if (o->UsernameClaim != NULL)    { CfgAddStr(f, "AuthOidcUsernameClaim", o->UsernameClaim); }
+				if (o->StaticHs256Key != NULL)   { CfgAddStr(f, "AuthOidcStaticHs256Key", o->StaticHs256Key); }
+				break;
 			}
 		}
 	}
@@ -4164,6 +4174,13 @@ void SiLoadUserCfg(HUB *h, FOLDER *f)
 	wchar_t tmp[MAX_SIZE];
 	USER *u;
 	USERGROUP *g;
+
+	bool oidc_test = false;
+	char oidc_issuer[512];
+	char oidc_client_id[256];
+	char oidc_username_claim[128];
+	char oidc_static_hs256_key[512];
+
 	// Validate arguments
 	if (h == NULL || f == NULL)
 	{
@@ -4245,6 +4262,27 @@ void SiLoadUserCfg(HUB *h, FOLDER *f)
 		}
 		CfgGetUniStr(f, "AuthCommonName", common_name, sizeof(common_name));
 		authdata = NewRootCertAuthData(serial, common_name);
+		break;
+
+	case AUTHTYPE_OIDC:
+		oidc_issuer[0] = 0;
+		oidc_client_id[0] = 0;
+		oidc_username_claim[0] = 0;
+		oidc_static_hs256_key[0] = 0;
+
+		oidc_test = CfgGetBool(f, "AuthOidcTestMode");
+		CfgGetStr(f, "AuthOidcIssuer", oidc_issuer, sizeof(oidc_issuer));
+		CfgGetStr(f, "AuthOidcClientId", oidc_client_id, sizeof(oidc_client_id));
+		CfgGetStr(f, "AuthOidcUsernameClaim", oidc_username_claim, sizeof(oidc_username_claim));
+		CfgGetStr(f, "AuthOidcStaticHs256Key", oidc_static_hs256_key, sizeof(oidc_static_hs256_key));
+
+		authdata = NewOidcAuthData(
+			oidc_test,
+			(IsEmptyStr(oidc_issuer) ? NULL : oidc_issuer),
+			(IsEmptyStr(oidc_client_id) ? NULL : oidc_client_id),
+			(IsEmptyStr(oidc_username_claim) ? NULL : oidc_username_claim),
+			(IsEmptyStr(oidc_static_hs256_key) ? NULL : oidc_static_hs256_key)
+		);
 		break;
 	}
 

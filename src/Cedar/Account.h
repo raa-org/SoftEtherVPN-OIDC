@@ -141,6 +141,17 @@ struct AUTHNT
 	wchar_t *NtUsername;			// User name on NT
 };
 
+// OpenID Connect (OIDC) authentication data (server-side)
+struct AUTHOIDC
+{
+	// If enabled, server accepts a JWT-like token without cryptographic verification. Only for local testing.
+	bool TestMode;
+	char *Issuer;               // Expected iss (optional)
+	char *ClientId;             // Expected aud/client_id (optional)
+	char *UsernameClaim;        // Claim name to map to SoftEther username (default: "preferred_username")
+	char *StaticHs256Key;       // Reserved (not used by RS256 verification)
+};
+
 
 
 // Macro
@@ -193,6 +204,7 @@ void *NewUserCertAuthData(X *x);
 void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name);
 void *NewRadiusAuthData(wchar_t *username);
 void *NewNTAuthData(wchar_t *username);
+void *NewOidcAuthData(bool test_mode, char *issuer, char *client_id, char *username_claim, char *static_hs256_key);
 void HashPassword(void *dst, char *username, char *password);
 POLICY *GetDefaultPolicy();
 POLICY *ClonePolicy(POLICY *policy);

@@ -135,7 +135,10 @@ void NormalizeIntListStr(char *dst, UINT dst_size, char *src, bool sorted, char 
 void ClearStr(char *str, UINT str_size);
 void SetStrCaseAccordingToBits(char *str, UINT bits);
 char *UrlDecode(char *url_str);
-
+// Debug() optional routing (env-controlled)
+void InitDebugOptionsFromEnv();
+void FreeDebugOptions();
+void DebugWriteStr(char *str);
 
 // *** JSON strings support
 // Original source code from Parson ( http://kgabis.github.com/parson/ )

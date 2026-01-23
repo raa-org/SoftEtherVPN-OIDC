@@ -189,6 +189,9 @@ if(WIN32)
   # vpncmgr
   add_subdirectory(vpncmgr)
 
+  # vpnuihelper
+  add_subdirectory(vpnuihelper)
+
   # vpnsetup
   add_subdirectory(vpnsetup)
 endif()

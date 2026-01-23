@@ -126,6 +126,10 @@ extern bool g_little_endian;
 extern LOCK *tick_manual_lock;
 extern bool g_foreground;
 
+// Optional Debug() routing (env-controlled)
+extern bool g_debug_to_log;       // SOFTETHER_DEBUG_LOG=1
+extern bool g_debug_to_stdout;    // SOFTETHER_DEBUG_STDOUT=1
+
 // Kernel state
 #define	NUM_KERNEL_STATUS	128
 extern UINT64 kernel_status[NUM_KERNEL_STATUS];

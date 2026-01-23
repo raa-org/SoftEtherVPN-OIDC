@@ -216,6 +216,7 @@ ERR_149					Sertifikat VPN Server tujuan tidak cocok dengan nama host yang diten
 ERR_150					Gagal menemukan versi TLS yang didukung oleh kedua sisi. Ini biasanya berarti salah satu sisi mungkin menggunakan versi TLS yang sudah usang yang dinonaktifkan oleh sisi lainnya.
 ERR_151					Gagal menemukan cipher yang tersedia yang didukung oleh kedua sisi, atau cipher yang ditentukan tidak kompatibel dengan sertifikat server.
 ERR_152					Gagal melakukan handshake TLS.
+ERR_153 				OpenID Connect sign-in failed before reaching the VPN server.
 
 
 # Concerning licenses
@@ -2108,6 +2109,11 @@ LC_UPDATE_VLAN			Supir Adaptor Jaringan Virtual "%S" telah dipasang ulang.
 LC_DELETE_VLAN			Adaptor Jaringan Virtual "%S" telah dihapus.
 LC_SET_PASSWORD			Pengaturan kata sandi untuk koneksi ke layanan klien telah diubah.
 LC_TAP_NOT_FOUND		Tidak dapat menemukan driver tun/tap untuk Mac OS X. Harap instal driver tun/tap.
+LC_OIDC_START_INTERECTIVE_FLOW Interactive OIDC authentication flow starting.
+LC_OIDC_START_SILENT_FLOW Silent OIDC authentication flow starting (user: %s).
+LC_OIDC_OK				OIDC authentication succeeded (user: %s).
+LC_OIDC_FAIL			OIDC authentication failed (status=%u, reason=%s).
+LC_LOG_MESSAGE 			%S
 
 # (Eraser log)
 LE_START				Memantau direktori "%S". Jika jumlah ruang disk yang tersedia menjadi kurang dari %S, file cadangan untuk file log dan konfigurasi yang disimpan di sub-direktori direktori ini akan secara otomatis dihapus berdasarkan urutan file tertua terlebih dahulu. Jumlah ruang disk kosong yang menentukan kapan penghapusan dimulai dapat diubah dengan mengubah item "AutoDeleteCheckDiskFreeSpaceMin" di file konfigurasi.

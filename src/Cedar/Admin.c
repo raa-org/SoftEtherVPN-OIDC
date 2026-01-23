@@ -14037,6 +14037,7 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 	AUTHROOTCERT *rootcert;
 	AUTHRADIUS *radius;
 	AUTHNT *nt;
+	AUTHOIDC *o;
 	BUF *b;
 	char plain_pw[MAX_SIZE];
 	// Validate arguments
@@ -14110,6 +14111,31 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 			nt->NtUsername = CopyUniStr(L"");
 		}
 		return nt;
+
+	case AUTHTYPE_OIDC:
+		{
+			char issuer[512] = {0};
+			char client_id[256] = {0};
+			char username_claim[128] = {0};
+			char static_hs256_key[512] = {0};
+			const bool test_mode = PackGetInt(p, "OidcTestMode") ? true : false;
+
+			PackGetStr(p, "OidcIssuer", issuer, sizeof(issuer));
+			PackGetStr(p, "OidcClientId", client_id, sizeof(client_id));
+			PackGetStr(p, "OidcUsernameClaim", username_claim, sizeof(username_claim));
+			PackGetStr(p, "OidcStaticHs256Key", static_hs256_key, sizeof(static_hs256_key));
+
+			o = ZeroMalloc(sizeof(AUTHOIDC));
+			o->TestMode = test_mode;
+
+			if (!IsEmptyStr(issuer))            o->Issuer = CopyStr(issuer);
+			if (!IsEmptyStr(client_id))         o->ClientId = CopyStr(client_id);
+			if (!IsEmptyStr(username_claim))    o->UsernameClaim = CopyStr(username_claim);
+			else                                o->UsernameClaim = CopyStr("preferred_username");
+			if (!IsEmptyStr(static_hs256_key))  o->StaticHs256Key = CopyStr(static_hs256_key);
+
+			return o;
+		}
 	}
 
 	return NULL;
@@ -14121,6 +14147,7 @@ void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 	AUTHROOTCERT *rootcert = authdata;
 	AUTHRADIUS *radius = authdata;
 	AUTHNT *nt = authdata;
+	AUTHOIDC *o = authdata;
 	// Validate arguments
 	if (p == NULL)
 	{
@@ -14157,6 +14184,14 @@ void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 
 	case AUTHTYPE_NT:
 		PackAddUniStr(p, "NtUsername", nt->NtUsername);
+		break;
+
+	case AUTHTYPE_OIDC:
+		PackAddInt(p, "OidcTestMode", o->TestMode ? 1 : 0);
+		PackAddStr(p, "OidcIssuer", o->Issuer != NULL ? o->Issuer : "");
+		PackAddStr(p, "OidcClientId", o->ClientId != NULL ? o->ClientId : "");
+		PackAddStr(p, "OidcUsernameClaim", o->UsernameClaim != NULL ? o->UsernameClaim : "");
+		PackAddStr(p, "OidcStaticHs256Key", o->StaticHs256Key != NULL ? o->StaticHs256Key : "");
 		break;
 	}
 }

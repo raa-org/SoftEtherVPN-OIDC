@@ -8,6 +8,7 @@
 #include "Str.h"
 
 #include "Cfg.h"
+#include "FileIO.h"
 #include "Internat.h"
 #include "Mayaqua.h"
 #include "Memory.h"
@@ -18,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 // Locking for call the token handling function
 LOCK *token_lock = NULL;
@@ -2705,6 +2707,123 @@ void Print(char *fmt, ...)
 	va_end(args);
 }
 
+static LOCK *debug_log_lock = NULL;
+static FILE *debug_log_fp = NULL;
+
+static void ensure_debug_log_dir(void)
+{
+    static bool done = false;
+    if (done) return;
+    done = true;
+
+    (void)MakeDir("@debug_log");
+}
+
+static bool env_bool(const char *name)
+{
+	char *v = getenv(name);
+	if (v == NULL || v[0] == 0) return false;
+	// treat these as false
+	if (StrCmpi(v, "0") == 0 || StrCmpi(v, "false") == 0 || StrCmpi(v, "no") == 0 || StrCmpi(v, "off") == 0) return false;
+	return true;
+}
+
+void InitDebugOptionsFromEnv()
+{
+	g_debug_to_log = env_bool("SOFTETHER_DEBUG_LOG");
+	g_debug_to_stdout = env_bool("SOFTETHER_DEBUG_STDOUT");
+
+	if (g_debug_to_log)
+	{
+		time_t now = time(NULL);
+		struct tm tmv;
+		char path[256];
+
+#ifdef OS_WIN32
+		localtime_s(&tmv, &now);
+#else
+		localtime_r(&now, &tmv);
+#endif
+
+		ensure_debug_log_dir();
+
+		snprintf(path, sizeof(path),
+			"debug_log/debug_%04d%02d%02d_%02d%02d%02d.log",
+			tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
+			tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+
+		debug_log_lock = NewLock();
+		debug_log_fp = fopen(path, "ab");
+		if (debug_log_fp != NULL)
+		{
+			setvbuf(debug_log_fp, NULL, _IONBF, 0); // unbuffered
+		}
+	}
+}
+
+void FreeDebugOptions()
+{
+	if (debug_log_fp != NULL)
+	{
+		fclose(debug_log_fp);
+		debug_log_fp = NULL;
+	}
+	if (debug_log_lock != NULL)
+	{
+		DeleteLock(debug_log_lock);
+		debug_log_lock = NULL;
+	}
+}
+
+void DebugWriteStr(char *str)
+{
+	char prefix[64];
+	char line[64 + 8192];
+	time_t now;
+	struct tm tmv;
+
+	if (str == NULL)
+	{
+		return;
+	}
+
+	// Preserve old behavior unless one of the env toggles is enabled
+	if (g_debug == false && g_debug_to_log == false && g_debug_to_stdout == false)
+	{
+		return;
+	}
+
+	// stdout routing (container logs)
+	if (g_debug || g_debug_to_stdout)
+	{
+		fputs(str, stdout);
+	}
+
+	// file routing (debug_log/)
+	if (g_debug_to_log && debug_log_fp != NULL)
+	{
+		now = time(NULL);
+#ifdef OS_WIN32
+		localtime_s(&tmv, &now);
+#else
+		localtime_r(&now, &tmv);
+#endif
+		snprintf(prefix, sizeof(prefix),
+			"%04d-%02d-%02d %02d:%02d:%02d ",
+			tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
+			tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+
+		// prefix + original message (message usually already includes \n)
+		snprintf(line, sizeof(line), "%s%s", prefix, str);
+
+		Lock(debug_log_lock);
+		{
+			fwrite(line, 1, StrLen(line), debug_log_fp);
+		}
+		Unlock(debug_log_lock);
+	}
+}
+
 // Display a debug string with arguments
 void DebugArgs(char *fmt, va_list args)
 {
@@ -2713,12 +2832,17 @@ void DebugArgs(char *fmt, va_list args)
 	{
 		return;
 	}
-	if (g_debug == false)
+	// If g_debug is off, allow Debug() output only when env toggles are enabled
+	if (g_debug == false && g_debug_to_log == false && g_debug_to_stdout == false)
 	{
 		return;
 	}
 
-	PrintArgs(fmt, args);
+	{
+		char buf[MAX_SIZE * 2];
+		FormatArgs(buf, sizeof(buf), fmt, args);
+		DebugWriteStr(buf);
+	}
 }
 
 // Display a debug string

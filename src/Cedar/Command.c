@@ -7682,6 +7682,7 @@ void PsMain(PS *ps)
 			{"UserSignedSet", PsUserSignedSet},
 			{"UserRadiusSet", PsUserRadiusSet},
 			{"UserNTLMSet", PsUserNTLMSet},
+			{"UserOidcSet", PsUserOidcSet},
 			{"UserPolicyRemove", PsUserPolicyRemove},
 			{"UserPolicySet", PsUserPolicySet},
 			{"UserExpiresSet", PsUserExpiresSet},
@@ -17310,6 +17311,41 @@ UINT PsUserGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 				}
 			}
 			break;
+
+		case AUTHTYPE_OIDC:
+			if (t.AuthData != NULL)
+			{
+				AUTHOIDC *ao = (AUTHOIDC *)t.AuthData;
+
+				// Test Mode
+				CtInsert(ct, L"OIDC Test Mode", ao->TestMode ? L"Yes" : L"No");
+
+				// Issuer
+				if (ao->Issuer != NULL && ao->Issuer[0] != '\0')
+				{
+					StrToUni(tmp, sizeof(tmp), ao->Issuer);
+					CtInsert(ct, L"OIDC Issuer", tmp);
+				}
+
+				// Client ID (audience)
+				if (ao->ClientId != NULL && ao->ClientId[0] != '\0')
+				{
+					StrToUni(tmp, sizeof(tmp), ao->ClientId);
+					CtInsert(ct, L"OIDC Client ID", tmp);
+				}
+
+				// Username claim
+				if (ao->UsernameClaim != NULL && ao->UsernameClaim[0] != '\0')
+				{
+					StrToUni(tmp, sizeof(tmp), ao->UsernameClaim);
+					CtInsert(ct, L"OIDC Username Claim", tmp);
+				}
+
+				// HS256 shared key presence (do not print the key)
+				CtInsert(ct, L"OIDC HS256 Key",
+					(ao->StaticHs256Key != NULL && ao->StaticHs256Key[0] != '\0') ? L"(set)" : L"(not set)");
+			}
+			break;
 		}
 
 		CtInsert(ct, L"---", L"---");
@@ -17865,6 +17901,108 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	FreeRpcSetUser(&t);
 
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+// Set the authentication method for the user to OIDC (OpenID Connect)
+UINT PsUserOidcSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+
+	// Parameters (all optional except [name])
+	// TESTMODE: 0/1 (default 0)
+	// ISSUER: expected "iss"
+	// CLIENTID: expected audience / client_id
+	// USERNAMECLAIM: claim to map to username (default handled in NewOidcAuthData: "preferred_username")
+	// HS256KEY: static HS256 shared secret
+	PARAM args[] =
+	{
+		{"[name]",       CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"TESTMODE",     CmdPrompt, L"1 to enable OIDC test mode (accept any token); 0 to disable", NULL, NULL},
+		{"ISSUER",       CmdPrompt, L"Expected OIDC issuer (iss)", NULL, NULL},
+		{"CLIENTID",     CmdPrompt, L"Expected OIDC client_id / audience", NULL, NULL},
+		{"USERNAMECLAIM",CmdPrompt, L"Username claim (default: preferred_username)", NULL, NULL},
+		{"HS256KEY",     CmdPrompt, L"Static HS256 shared secret", NULL, NULL},
+	};
+
+	// Require a selected HUB
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	// Fetch existing user
+	ret = ScGetUser(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	// Replace current auth with OIDC
+	FreeAuthData(t.AuthType, t.AuthData);
+
+	// Gather parameters
+	bool test_mode = false;
+	{
+		char *tm = GetParamStr(o, "TESTMODE");
+		if (tm != NULL && tm[0] != 0)
+		{
+			test_mode = ToInt(tm) ? true : false;
+		}
+	}
+
+	char *issuer         = GetParamStr(o, "ISSUER");
+	char *client_id      = GetParamStr(o, "CLIENTID");
+	char *username_claim = GetParamStr(o, "USERNAMECLAIM");
+	char *hs256key       = GetParamStr(o, "HS256KEY");
+
+	// Empty strings -> NULL so NewOidcAuthData can apply defaults
+	if (issuer != NULL && issuer[0] == 0) issuer = NULL;
+	if (client_id != NULL && client_id[0] == 0) client_id = NULL;
+	if (username_claim != NULL && username_claim[0] == 0) username_claim = NULL;
+	if (hs256key != NULL && hs256key[0] == 0) hs256key = NULL;
+
+	{
+		AUTHOIDC *ao = (AUTHOIDC *)NewOidcAuthData(
+			test_mode,
+			issuer,
+			client_id,
+			username_claim,   // default "preferred_username" is applied inside if NULL/empty
+			hs256key          // optional HS256 key
+		);
+
+		t.AuthType = AUTHTYPE_OIDC;
+		t.AuthData = ao;
+	}
+
+	// Write back
+	ret = ScSetUser(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetUser(&t);
 	FreeParamValueList(o);
 
 	return 0;

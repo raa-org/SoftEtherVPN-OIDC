@@ -357,6 +357,20 @@ struct RPC_CLIENT_GET_CONNECTION_STATUS
 	UINT VLanId;							// VLAN ID
 };
 
+struct RPC_OIDC_GET_LOGGED_IN_USER
+{
+	char Username[256];		// UTF-8 username (subject / login)
+	bool HasLogin;			// true if there is at least one OIDC user with a valid refresh token
+};
+
+struct RPC_OIDC_LOGOUT_ALL_RESULT
+{
+	bool AnyUpdatedAccounts;		// true if at least one OIDC account was updated/cleared
+	bool AnyErrorsDuringLogout;		// true if any errors occurred while logging out OIDC accounts
+	bool AnyBrowserDataPurged;
+	bool AnyErrorsDuringPurge;
+};
+
 
 // RPC connection
 struct CLIENT_RPC_CONNECTION
@@ -444,7 +458,8 @@ struct CM_SETTING
 };
 
 
-
+// OIDC helper UI bridge
+void ServiceInitOidcUiBridge(void);
 
 // Function prototype
 REMOTE_CLIENT *CcConnectRpc(char *server_name, char *password, bool *bad_pass, bool *no_remote, UINT wait_retry);
@@ -491,6 +506,10 @@ UINT CcSetStartupAccount(REMOTE_CLIENT *r, RPC_CLIENT_DELETE_ACCOUNT *a);
 UINT CcRemoveStartupAccount(REMOTE_CLIENT *r, RPC_CLIENT_DELETE_ACCOUNT *a);
 UINT CcGetIssuer(REMOTE_CLIENT *r, RPC_GET_ISSUER *a);
 
+UINT CcOidcGetLoggedInUser(REMOTE_CLIENT* rc, RPC_OIDC_GET_LOGGED_IN_USER* r);
+UINT CcOidcLogoutAllAccountsEx(REMOTE_CLIENT* r, bool forget, RPC_OIDC_LOGOUT_ALL_RESULT* logout);
+UINT CcOidcLogoutAllAccounts(REMOTE_CLIENT* rc, RPC_OIDC_LOGOUT_ALL_RESULT* r);
+UINT CcOidcLogoutAndForgetAllAccounts(REMOTE_CLIENT* r, RPC_OIDC_LOGOUT_ALL_RESULT* logout);
 
 void CcSetServiceToForegroundProcess(REMOTE_CLIENT *r);
 char *CiGetFirstVLan(CLIENT *c);
@@ -552,6 +571,9 @@ SOCK *CncMsgDlg(UI_MSG_DLG *dlg);
 void CndMsgDlgFree(SOCK *s);
 SOCK *CncNicInfo(UI_NICINFO *info);
 void CncNicInfoFree(SOCK *s);
+void CnOidcOpenWindow(SOCK* s, PACK* p);
+void CnOidcCloseWindow(SOCK* s, PACK* p);
+void CnOidcPurgeAccountData(SOCK* s, PACK* p);
 
 void CtStartClient();
 void CtStopClient();
@@ -593,7 +615,8 @@ bool CtRemoveStartupAccount(CLIENT *c, RPC_CLIENT_DELETE_ACCOUNT *a);
 bool CtGetIssuer(CLIENT *c, RPC_GET_ISSUER *a);
 bool CtGetCommonProxySetting(CLIENT *c, INTERNET_SETTING *a);
 bool CtSetCommonProxySetting(CLIENT *c, INTERNET_SETTING *a);
-
+bool CtOidcGetLoggedInUser(CLIENT* c, RPC_OIDC_GET_LOGGED_IN_USER* l);
+bool CtOidcLogoutAllAccounts(CLIENT* c, bool purge_webview_data, RPC_OIDC_LOGOUT_ALL_RESULT* l);
 
 // Internal function prototype
 void CiSendGlobalPulse(CLIENT *c);
@@ -686,6 +709,10 @@ bool CiHasAccountSensitiveInformation(BUF *b);
 void CiApplyInnerVPNServerConfig(CLIENT *c);
 void CiIncrementNumActiveSessions();
 void CiDecrementNumActiveSessions();
+bool CiNotifyHelperOpenOidcWindow(const char* url, const char* account_key, void* user_data);
+bool CiNotifyHelperWaitOidcWindowClosed(UINT timeout_ms, void* user_data);
+bool CiNotifyHelperCloseOidcWindow(void* user_data);
+bool CiNotifyHelperPurgeOidcAccountData(const char* account_key, UINT timeout_ms, void* user_data);
 
 BUF *EncryptPassword(char *password);
 BUF *EncryptPassword2(char *password);
@@ -710,6 +737,10 @@ void InRpcClientEnumSecure(RPC_CLIENT_ENUM_SECURE *e, PACK *p);
 void OutRpcClientEnumSecure(PACK *p, RPC_CLIENT_ENUM_SECURE *e);
 void InRpcUseSecure(RPC_USE_SECURE *u, PACK *p);
 void OutRpcUseSecure(PACK *p, RPC_USE_SECURE *u);
+void InRpcOidcGetLoggedInUser(RPC_OIDC_GET_LOGGED_IN_USER* r, PACK* p);
+void OutRpcOidcGetLoggedInUser(PACK* p, const RPC_OIDC_GET_LOGGED_IN_USER* r);
+void InRpcOidcLogoutAllResult(RPC_OIDC_LOGOUT_ALL_RESULT* r, PACK* p);
+void OutRpcOidcLogoutAllResult(PACK* p, const RPC_OIDC_LOGOUT_ALL_RESULT* r);
 void OutRpcEnumObjectInSecure(PACK *p, RPC_ENUM_OBJECT_IN_SECURE *e);
 void InRpcCreateVLan(RPC_CLIENT_CREATE_VLAN *v, PACK *p);
 void OutRpcCreateVLan(PACK *p, RPC_CLIENT_CREATE_VLAN *v);

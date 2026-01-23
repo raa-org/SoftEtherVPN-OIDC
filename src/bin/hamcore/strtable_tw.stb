@@ -222,6 +222,7 @@ ERR_149					目標 VPN Server 的證書與指定的主機名稱不匹配。
 ERR_150					找不到連接雙方都支持的 TLS 版本。這通常意味著一方可能正在使用已被另一方禁用的過時的 TLS 版本。
 ERR_151					找不到連接雙方都支持的加密演算法，或者指定的演算法與伺服器憑證不相容。
 ERR_152					TLS 握手失敗。
+ERR_153 				OpenID Connect sign-in failed before reaching the VPN server.
 
 
 #關於許可證
@@ -2126,6 +2127,11 @@ LC_UPDATE_VLAN			已重裝虛擬網路介面卡 "%S" 驅動。
 LC_DELETE_VLAN			已刪除虛擬網路介面卡 "%S"。
 LC_SET_PASSWORD			連接到用戶端服務的密碼設置已變更。
 LC_TAP_NOT_FOUND		無法找到 tun/tap 的 Mac OS X 驅動。請安裝 tun/tap 驅動。
+LC_OIDC_START_INTERECTIVE_FLOW Interactive OIDC authentication flow starting.
+LC_OIDC_START_SILENT_FLOW Silent OIDC authentication flow starting (user: %s).
+LC_OIDC_OK				OIDC authentication succeeded (user: %s).
+LC_OIDC_FAIL			OIDC authentication failed (status=%u, reason=%s).
+LC_LOG_MESSAGE 			%S
 
 #(刪除日誌)
 LE_START				正在監控目錄 "%S"。如果可用磁碟空間變得小於 %S，此目錄和其子目錄下的日誌檔和設定檔的備份檔案將按照從舊到新的順序被自動刪除。決定何時開始刪除的可用磁碟空間大小，可以在設定檔的“AutoDeleteCheckDiskFreeSpaceMin”項目中修改。

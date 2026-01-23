@@ -573,6 +573,15 @@ CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a)
 		StrCpy(ret->OpensslEngineName, sizeof(ret->OpensslEngineName), a->OpensslEngineName);
     ret->ClientK = OpensslEngineToK(ret->OpensslEnginePrivateKeyName, ret->OpensslEngineName);
 		break;
+
+	case CLIENT_AUTHTYPE_OIDC:
+		if (a->OidcConfig != NULL)
+		{
+			ret->OidcConfig = ZeroMalloc(sizeof(OIDC_CONFIG));
+			Copy(ret->OidcConfig, a->OidcConfig, sizeof(OIDC_CONFIG));
+		}
+		StrCpy(ret->OidcIdToken, sizeof(ret->OidcIdToken), a->OidcIdToken);
+		break;
 	}
 
 	return ret;

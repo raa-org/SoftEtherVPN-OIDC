@@ -1,0 +1,35 @@
+#pragma code_page(932)
+
+1 VERSIONINFO
+ FILEVERSION ${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},0,${PROJECT_VERSION_PATCH}
+ PRODUCTVERSION ${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},0,${PROJECT_VERSION_PATCH}
+ FILEFLAGSMASK 0x17L
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041104b0"
+    BEGIN
+      VALUE "CompanyName", "Unknown"
+      VALUE "FileDescription", "${PROJECT_NAME} ${COMPONENT_NAME} (Developer Edition)"
+      VALUE "InternalName", "${COMPONENT_INTERNAL_NAME}"
+      VALUE "OriginalFilename", "${COMPONENT_FILE_NAME}"
+
+      VALUE "ProductName", "${PROJECT_NAME} ${COMPONENT_NAME}"
+      VALUE "ProductVersion", "${FORK_VERSION_STR}"
+
+      VALUE "UpstreamVersion", "${UPSTREAM_VERSION_STR}"
+      VALUE "FileVersion", "${UPSTREAM_VERSION_STR}"
+
+      VALUE "ForkBuildNumber", "${FORK_BUILD_NUMBER}"
+      VALUE "PrivateBuild", "Fork from SoftEther"
+    END
+  END
+
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x411, 1200
+  END
+END

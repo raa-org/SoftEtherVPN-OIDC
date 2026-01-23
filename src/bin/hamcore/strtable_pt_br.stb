@@ -235,6 +235,7 @@ ERR_149	The destination VPN Server's certificate does not match the specified ho
 ERR_150	Failed to find the TLS version that is supported by both sides. This usually means that one side may be using an obsolete TLS version which is diabled by the other side.
 ERR_151	Failed to find an available cipher that is supported by both sides, or the cipher specified is not compatible with the server certificate.
 ERR_152	TLS handshake has failed.
+ERR_153 OpenID Connect sign-in failed before reaching the VPN server.
 
 
 # Concerning licenses
@@ -2108,6 +2109,11 @@ LC_UPDATE_VLAN	O driver do adaptador de rede virtual "%S” foi reinstalado.
 LC_DELETE_VLAN	O adaptador de rede virtual "%S” foi removido.
 LC_SET_PASSWORD	The password setting for connection to a client service has been changed.
 LC_TAP_NOT_FOUND	Cannot find the tun/tap driver for Mac OS X. Please install the tun/tap driver.
+LC_OIDC_START_INTERECTIVE_FLOW Interactive OIDC authentication flow starting.
+LC_OIDC_START_SILENT_FLOW Silent OIDC authentication flow starting (user: %s).
+LC_OIDC_OK				OIDC authentication succeeded (user: %s).
+LC_OIDC_FAIL			OIDC authentication failed (status=%u, reason=%s).
+LC_LOG_MESSAGE 			%S
 
 
 # (Eraser log)

@@ -13664,8 +13664,8 @@ void SmEditUserDlgInit(HWND hWnd, SM_EDIT_USER *s)
 	RPC_SET_USER *u;
 	wchar_t tmp[MAX_SIZE];
 	UINT i;
-	UINT icons[6] = {ICO_PASS, ICO_KEY, ICO_CERT, ICO_SERVER_CERT,
-		ICO_TOWER, ICO_LINK};
+	UINT icons[7] = {ICO_PASS, ICO_KEY, ICO_CERT, ICO_SERVER_CERT,
+		ICO_TOWER, ICO_LINK, ICO_POLICE};
 	RECT rect;
 
 	// Validate arguments
@@ -13685,7 +13685,7 @@ void SmEditUserDlgInit(HWND hWnd, SM_EDIT_USER *s)
 	GetClientRect(DlgItem(hWnd, L_AUTH), &rect);
 	LvInsertColumn(hWnd, L_AUTH, 0, L"Name", rect.right - rect.left);
 
-	for (i = 0;i < 6;i++)
+	for (i = 0;i < 7;i++)
 	{
 		LvInsert(hWnd, L_AUTH, icons[i], (void *)i, 1, SmGetAuthTypeStr(i));
 	}
@@ -13810,6 +13810,10 @@ void SmEditUserDlgInit(HWND hWnd, SM_EDIT_USER *s)
 				Check(hWnd, R_SET_RADIUS_USERNAME, false);
 			}
 		}
+		break;
+
+	case AUTHTYPE_OIDC:
+		// No extra UI fields for OIDC in this dialog.
 		break;
 	}
 
@@ -13965,6 +13969,10 @@ void SmEditUserDlgUpdate(HWND hWnd, SM_EDIT_USER *s)
 		case AUTHTYPE_RADIUS:
 			u->AuthData = NewRadiusAuthData(L"");
 			break;
+
+		case AUTHTYPE_OIDC:
+			u->AuthData = NewOidcAuthData(false, NULL, NULL, NULL, NULL);
+			break;
 		}
 	}
 
@@ -14109,6 +14117,10 @@ void SmEditUserDlgUpdate(HWND hWnd, SM_EDIT_USER *s)
 		{
 			ok = false;
 		}
+		break;
+
+	case AUTHTYPE_OIDC:
+		// No additional required fields in this dialog for OIDC.
 		break;
 	}
 

@@ -1,0 +1,23 @@
+# ---- Fork versioning ----
+set(FORK_VERSION "1.0.2" CACHE STRING "Fork version (MAJOR.MINOR.PATCH)")
+set(FORK_BUILD_NUMBER "" CACHE STRING "Fork build number (integer)")
+
+if ("${FORK_BUILD_NUMBER}" STREQUAL "")
+  set(FORK_BUILD_NUMBER "2")
+endif()
+
+# Parse FORK_VERSION -> MAJOR.MINOR.PATCH
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)$" _fork_match "${FORK_VERSION}")
+if (NOT _fork_match)
+  message(FATAL_ERROR "FORK_VERSION must be MAJOR.MINOR.PATCH, got: '${FORK_VERSION}'")
+endif()
+
+set(FORK_VERSION_MAJOR "${CMAKE_MATCH_1}")
+set(FORK_VERSION_MINOR "${CMAKE_MATCH_2}")
+set(FORK_VERSION_PATCH "${CMAKE_MATCH_3}")
+
+# String shown to users
+set(FORK_VERSION_STR "${FORK_VERSION_MAJOR}.${FORK_VERSION_MINOR}.${FORK_VERSION_PATCH}.${FORK_BUILD_NUMBER}")
+
+# Upstream string
+set(UPSTREAM_VERSION_STR "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.0.${PROJECT_VERSION_PATCH}")

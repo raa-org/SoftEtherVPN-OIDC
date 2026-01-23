@@ -512,6 +512,38 @@ void *NewNTAuthData(wchar_t *username)
 	return a;
 }
 
+// Create an OIDC authentication data
+void *NewOidcAuthData(bool test_mode, char *issuer, char *client_id, char *username_claim, char *static_hs256_key)
+{
+	AUTHOIDC *a;
+	a = ZeroMallocEx(sizeof(AUTHOIDC), true);
+
+	a->TestMode = test_mode;
+
+	if (!IsEmptyStr(issuer))
+	{
+		a->Issuer = CopyStr(issuer);
+	}
+	if (!IsEmptyStr(client_id))
+	{
+		a->ClientId = CopyStr(client_id);
+	}
+	if (!IsEmptyStr(username_claim))
+	{
+		a->UsernameClaim = CopyStr(username_claim);
+	}
+	else
+	{
+		// sensible default for most IdPs (Keycloak, etc.)
+		a->UsernameClaim = CopyStr("preferred_username");
+	}
+	if (!IsEmptyStr(static_hs256_key))
+	{
+		a->StaticHs256Key = CopyStr(static_hs256_key);
+	}
+	return a;
+}
+
 // Create a Radius authentication data
 void *NewRadiusAuthData(wchar_t *username)
 {
@@ -620,6 +652,7 @@ void *CopyAuthData(void *authdata, UINT authtype)
 	AUTHROOTCERT *rootcert = (AUTHROOTCERT *)authdata;
 	AUTHRADIUS *radius = (AUTHRADIUS *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
+	AUTHOIDC *o = (AUTHOIDC *)authdata;
 	// Validate arguments
 	if (authdata == NULL || authtype == AUTHTYPE_ANONYMOUS)
 	{
@@ -668,6 +701,17 @@ void *CopyAuthData(void *authdata, UINT authtype)
 			return ret;
 		}
 		break;
+
+	case AUTHTYPE_OIDC:
+		{
+			AUTHOIDC *ret = ZeroMalloc(sizeof(AUTHOIDC));
+			ret->TestMode      = o->TestMode;
+			ret->Issuer        = o->Issuer        ? CopyStr(o->Issuer)         : NULL;
+			ret->ClientId      = o->ClientId      ? CopyStr(o->ClientId)       : NULL;
+			ret->UsernameClaim = o->UsernameClaim ? CopyStr(o->UsernameClaim)  : NULL;
+			ret->StaticHs256Key= o->StaticHs256Key? CopyStr(o->StaticHs256Key) : NULL;
+			return ret;
+		}
 	}
 
 	return NULL;
@@ -1098,6 +1142,7 @@ void FreeAuthData(UINT authtype, void *authdata)
 	AUTHROOTCERT *rc = (AUTHROOTCERT *)authdata;
 	AUTHRADIUS *rd = (AUTHRADIUS *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
+	AUTHOIDC *o = (AUTHOIDC *)authdata;
 	// Validate arguments
 	if (authtype == AUTHTYPE_ANONYMOUS || authdata == NULL)
 	{
@@ -1136,6 +1181,17 @@ void FreeAuthData(UINT authtype, void *authdata)
 	case AUTHTYPE_NT:
 		// Windows NT authentication
 		Free(nt->NtUsername);
+		break;
+
+	case AUTHTYPE_OIDC:
+		// OpenID Connect authentication
+		if (o != NULL)
+		{
+			if (o->Issuer != NULL) Free(o->Issuer);
+			if (o->ClientId != NULL) Free(o->ClientId);
+			if (o->UsernameClaim != NULL) Free(o->UsernameClaim);
+			if (o->StaticHs256Key != NULL) Free(o->StaticHs256Key);
+		}
 		break;
 	}
 

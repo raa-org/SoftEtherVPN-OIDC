@@ -1207,6 +1207,8 @@
 #define ID_VPNGATE40108                 40108
 #define ID__40109                       40109
 #define CMD_VGS                         40110
+#define B_OAUTH_LOGIN                   40112
+
 
 // Next default values for new objects
 // 

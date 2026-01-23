@@ -197,6 +197,7 @@ int Cmp(void *p1, void *p2, UINT size);
 int CmpCaseIgnore(void *p1, void *p2, UINT size);
 void ZeroMem(void *addr, UINT size);
 void Zero(void *addr, UINT size);
+void SecureZero(void* addr, UINT size);
 void *Clone(void *addr, UINT size);
 void *AddHead(void *src, UINT src_size, void *head, UINT head_size);
 

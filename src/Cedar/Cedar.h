@@ -126,6 +126,7 @@
 #define	MAX_SECURE_DEVICE_FILE_LEN	255		// Secure device file name maximum length
 #define	MAX_ADMIN_OPTION_NAME_LEN	63		// Management option name
 #define	MAX_REDIRECT_URL_LEN		255		// URL length to redirect
+#define	MAX_OIDC_TOKEN_LEN		8192	// OIDC / JWT sizes
 
 
 //////////////////////////////////////////////////////////////////////
@@ -366,6 +367,7 @@
 #define	AUTHTYPE_ROOTCERT				3			// Root certificate which is issued by trusted Certificate Authority
 #define	AUTHTYPE_RADIUS					4			// Radius authentication
 #define	AUTHTYPE_NT						5			// Windows NT authentication
+#define AUTHTYPE_OIDC					6			// OpenID Connect (OIDC) ID token authentication
 #define AUTHTYPE_EXTERNAL				96			// External authentication (completed)
 #define	AUTHTYPE_WIREGUARD_KEY			97			// WireGuard public key authentication
 #define	AUTHTYPE_OPENVPN_CERT    		98			// TLS client certificate authentication
@@ -378,6 +380,7 @@
 #define	CLIENT_AUTHTYPE_CERT			3			// Certificate authentication
 #define	CLIENT_AUTHTYPE_SECURE			4			// Secure device authentication
 #define	CLIENT_AUTHTYPE_OPENSSLENGINE			5			// Openssl engine authentication
+#define	CLIENT_AUTHTYPE_OIDC			6			// OpenID Connect (OIDC) ID token authentication
 
 
 
@@ -877,6 +880,7 @@
 #define ERR_SSL_PROTOCOL_VERSION		150 // SSL version not supported
 #define ERR_SSL_SHARED_CIPHER			151 // Can't find common cipher
 #define ERR_SSL_HANDSHAKE				152 // Other SSL handshake error
+#define ERR_OIDC_FLOW_FAILED			153 //
 
 
 ////////////////////////////

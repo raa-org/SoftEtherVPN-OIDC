@@ -218,6 +218,7 @@ ERR_149					接続先サーバーの提示した証明書が指定したホス�
 ERR_150					両側でサポートされている TLS バージョンが見つかりませんでした。どちらかが相手側で無効になっている古い TLS バージョンを使用している可能性があります。
 ERR_151					両側でサポートされている暗号化アルゴリズムが見つからなかったか、指定されたアルゴリズムがサーバー証明書と互換性がありません。
 ERR_152					TLS ハンドシェイクが失敗しました。
+ERR_153 				OpenID Connect sign-in failed before reaching the VPN server.
 
 
 # ライセンス関係
@@ -2110,6 +2111,11 @@ LC_UPDATE_VLAN			仮想 LAN カード "%S" のドライバを再インストー�
 LC_DELETE_VLAN			仮想 LAN カード "%S" を削除しました。
 LC_SET_PASSWORD			クライアントサービスに接続するためのパスワード設定を変更しました。
 LC_TAP_NOT_FOUND		MacOS X 用の tun/tap ドライバが見つかりません。tun/tap ドライバのインストールを行ってください。
+LC_OIDC_START_INTERECTIVE_FLOW Interactive OIDC authentication flow starting.
+LC_OIDC_START_SILENT_FLOW Silent OIDC authentication flow starting (user: %s).
+LC_OIDC_OK				OIDC authentication succeeded (user: %s).
+LC_OIDC_FAIL			OIDC authentication failed (status=%u, reason=%s).
+LC_LOG_MESSAGE 			%S
 
 # (イレーザー ログ)
 LE_START				ディレクトリ "%S" の監視を開始します。ディスクの空き容量が %S 未満になった場合、このディレクトリのサブディレクトリ内に保存されているログファイルおよび設定のバックアップファイルを、古い順番に自動的に削除します。削除を開始するディスクの最小空き容量は、設定ファイルの "AutoDeleteCheckDiskFreeSpaceMin" 項目で変更することができます。

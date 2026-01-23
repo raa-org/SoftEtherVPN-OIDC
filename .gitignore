@@ -3,6 +3,8 @@
 .project
 .settings/
 .vs/
+.idea/
+.vscode/
 Makefile
 /src/bin/*
 !/src/bin/hamcore/
@@ -31,6 +33,7 @@ x64_Debug
 *.opt
 *.suo
 !/src/BuildFiles/**/*
+docker/
 
 # Applied for 'developer_tools/stbchecker/'
 # Copied from by https://www.gitignore.io/api/visualstudio
