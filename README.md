@@ -1,5 +1,8 @@
 # SoftEther VPN
 
+This is a fork of SoftEther VPN with added OpenID Connect (OIDC) authentication support.
+All other features and behavior follow the upstream Developer Edition unless noted.
+
 ||Badges|
 |---|---|
 |GitLab CI|[![GitLab CI build status](https://gitlab.com/SoftEther/SoftEtherVPN/badges/master/pipeline.svg)](https://gitlab.com/SoftEther/SoftEtherVPN/pipelines)|
@@ -7,6 +10,7 @@
 |Cirrus CI|[![Cirrus CI build status](https://api.cirrus-ci.com/github/SoftEtherVPN/SoftEtherVPN.svg)](https://cirrus-ci.com/github/SoftEtherVPN/SoftEtherVPN)|
 
 - [SoftEther VPN](#softether-vpn)
+- [OpenID Connect (OIDC) Authentication (Fork Feature)](#openid-connect-oidc-authentication-fork-feature)
 - [BOARD MEMBERS OF THIS REPOSITORY](#board-members-of-this-repository)
 - [SOFTETHER VPN ADVANTAGES](#softether-vpn-advantages)
 - [Installation](#installation)
@@ -78,6 +82,35 @@ by the single SoftEther VPN Server program.
 More details on https://www.softether.org/.
 
 
+# OpenID Connect (OIDC) Authentication (Fork Feature)
+
+This fork adds OpenID Connect (OIDC) as an additional user authentication method for SoftEther VPN Server.
+It allows authentication via any OIDC-compliant identity provider while keeping the rest of SoftEther VPN behavior unchanged.
+
+Implementation details (from this fork's source code):
+
+- Server-side auth type: `AUTHTYPE_OIDC` / `CLIENT_AUTHTYPE_OIDC` uses an ID token (JWT) passed as `jwt` in the login packet.
+- Per-user OIDC settings are stored in `AUTHOIDC`:
+  - `TestMode` (accepts tokens without cryptographic verification; only when `SE_OIDC_TEST_MODE=1` is set)
+  - `Issuer` (expected `iss`)
+  - `ClientId` (expected `aud` / `client_id`)
+  - `UsernameClaim` (claim used to map to SoftEther username; default `preferred_username`)
+  - `StaticHs256Key` (reserved; currently not used for RS256 verification)
+- Token validation uses `OidcValidateIdToken()`:
+  - Verifies signature and time claims.
+  - Enforces issuer and audience if configured.
+  - Maps username from the configured claim and requires it to match the SoftEther username.
+  - Verification key resolution order: `SE_OIDC_PUBKEY_PEM`, then `SE_OIDC_JWKS_URI`, then issuer-derived JWKS (Keycloak-style `/protocol/openid-connect/certs` when issuer contains `/realms/`).
+- Client flow:
+  - OAuth2/OIDC Authorization Code with PKCE (S256) and a local loopback redirect.
+  - Opens the authorization URL via system browser or embedded WebView (Windows helper).
+  - Stores refresh tokens in a secure store and attempts silent refresh before falling back to interactive sign-in.
+
+CLI / server configuration:
+
+- `UserOidcSet` command in `vpncmd` configures a user for OIDC with parameters:
+  `TESTMODE`, `ISSUER`, `CLIENTID`, `USERNAMECLAIM`, `HS256KEY`.
+
 # BOARD MEMBERS OF THIS REPOSITORY
 
 
@@ -125,6 +158,7 @@ https://github.com/chipitsine
   VPN tunnel.
 - User authentication with RADIUS and NT domain controllers.
 - User authentication with X.509 client certificate.
+- User authentication with OpenID Connect (OIDC).
 - Packet logging.
 - 1Gbps-class high-speed throughput performance with low memory and
   CPU usage.
@@ -159,6 +193,7 @@ https://github.com/chipitsine
 | Password Authentication | ✅ | ✅ | |
 | RADIUS / NT Authentication | ✅ | ✅ | |
 | Certificate Authentication | ⚠️ | ✅ | SE supports the feature in SSL-VPN only. |
+| OpenID Connect (OIDC) Authentication | ❌ | ✅ | Available in this fork only. |
 | IPv6-capable VPN Tunnel | ⚠️ | ✅ | SE supports IPv6 in L2 VPN tunnels only. |
 | IPv4 Route Management | ✅ | ✅ | Windows clients only |
 | IPv6 Route Management | ❌ | ✅ | Windows clients only |
@@ -167,7 +202,6 @@ https://github.com/chipitsine
 | ECDSA Certificates Import | ❌ | ✅ | |
 | Runs on Windows XP and Earlier | ✅ | ❌ | |
 | Compatible with SoftEther VPN 1.0 | ✅ | ❌ | |
-| AES-NI Hardware Acceleration | ⚠️ |  ✅ | SE requires [intel_aes_lib](https://software.intel.com/sites/default/files/article/181731/intel-aesni-sample-library-v1.2.zip) to enable AES-NI, so x86 only. In DE, enabled by default as long as processor supports it (at least x86 and ARM). |
 
 # Installation
 
