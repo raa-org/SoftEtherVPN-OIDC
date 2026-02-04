@@ -3,11 +3,56 @@
 This is a fork of SoftEther VPN with added OpenID Connect (OIDC) authentication support.
 All other features and behavior follow the upstream Developer Edition unless noted.
 
-||Badges|
-|---|---|
-|GitLab CI|[![GitLab CI build status](https://gitlab.com/SoftEther/SoftEtherVPN/badges/master/pipeline.svg)](https://gitlab.com/SoftEther/SoftEtherVPN/pipelines)|
-|Coverity Scan|[![Coverity Scan build status](https://scan.coverity.com/projects/16304/badge.svg)](https://scan.coverity.com/projects/softethervpn-softethervpn)|
-|Cirrus CI|[![Cirrus CI build status](https://api.cirrus-ci.com/github/SoftEtherVPN/SoftEtherVPN.svg)](https://cirrus-ci.com/github/SoftEtherVPN/SoftEtherVPN)|
+# OpenID Connect (OIDC) Authentication (Fork Feature)
+
+This fork adds OpenID Connect (OIDC) as an additional user authentication method for SoftEther VPN Server.
+It allows authentication via any OIDC-compliant identity provider while keeping the rest of SoftEther VPN behavior unchanged.
+
+Implementation details (from this fork's source code):
+
+- Server-side auth type: `AUTHTYPE_OIDC` / `CLIENT_AUTHTYPE_OIDC` uses an ID token (JWT) passed as `jwt` in the login packet.
+- Per-user OIDC settings are stored in `AUTHOIDC`:
+  - `TestMode` (accepts tokens without cryptographic verification; only when `SE_OIDC_TEST_MODE=1` is set)
+  - `Issuer` (expected `iss`)
+  - `ClientId` (expected `aud` / `client_id`)
+  - `UsernameClaim` (claim used to map to SoftEther username; default `preferred_username`)
+  - `StaticHs256Key` (reserved; currently not used for RS256 verification)
+- Token validation uses `OidcValidateIdToken()`:
+  - Verifies signature and time claims.
+  - Enforces issuer and audience if configured.
+  - Maps username from the configured claim and requires it to match the SoftEther username.
+  - Verification key resolution order: `SE_OIDC_PUBKEY_PEM`, then `SE_OIDC_JWKS_URI`, then issuer-derived JWKS (Keycloak-style `/protocol/openid-connect/certs` when issuer contains `/realms/`).
+- Client flow:
+  - OAuth2/OIDC Authorization Code with PKCE (S256) and a local loopback redirect.
+  - Opens the authorization URL via system browser or embedded WebView (Windows helper).
+  - Stores refresh tokens in a secure store and attempts silent refresh before falling back to interactive sign-in.
+
+CLI / server configuration:
+
+- `UserOidcSet` command in `vpncmd` configures a user for OIDC with parameters:
+  `TESTMODE`, `ISSUER`, `CLIENTID`, `USERNAMECLAIM`, `HS256KEY`.
+
+  Client UI / UX (what users see):
+
+- When connecting to an account that uses `OAuth2 / OpenID Connect`, the client launches an interactive OIDC login flow.
+- Windows:
+  - Uses the client notification helper (`vpnuihelper`) to open an embedded WebView2 window when available.
+  - Falls back to the system default browser if WebView2 is not available.
+  - The tray helper provides quick actions: Connect, Disconnect, Log out (clear OIDC tokens), and Log out and forget (clear tokens + WebView2 data).
+- macOS / Linux / other:
+  - Opens the system default browser (via `open` or `xdg-open`) for the login flow.
+- After successful login, the client receives the authorization code via a local loopback redirect and completes token exchange. Subsequent connects attempt silent refresh first.
+
+Quick start (OIDC):
+
+1. Configure the user on the server:
+   - Create a user as usual (e.g., `UserCreate` in `vpncmd`).
+   - Set the auth method to OIDC with `UserOidcSet` and the proper `ISSUER`, `CLIENTID`, and `USERNAMECLAIM`.
+2. On the client:
+   - Create a VPN account with auth type `OAuth2 / OpenID Connect`.
+   - Click Connect. The browser (or embedded WebView2 on Windows) will open for sign-in.
+3. Finish sign-in in your IdP; the connection proceeds automatically.
+
 
 - [SoftEther VPN](#softether-vpn)
 - [OpenID Connect (OIDC) Authentication (Fork Feature)](#openid-connect-oidc-authentication-fork-feature)
@@ -81,35 +126,6 @@ by the single SoftEther VPN Server program.
 
 More details on https://www.softether.org/.
 
-
-# OpenID Connect (OIDC) Authentication (Fork Feature)
-
-This fork adds OpenID Connect (OIDC) as an additional user authentication method for SoftEther VPN Server.
-It allows authentication via any OIDC-compliant identity provider while keeping the rest of SoftEther VPN behavior unchanged.
-
-Implementation details (from this fork's source code):
-
-- Server-side auth type: `AUTHTYPE_OIDC` / `CLIENT_AUTHTYPE_OIDC` uses an ID token (JWT) passed as `jwt` in the login packet.
-- Per-user OIDC settings are stored in `AUTHOIDC`:
-  - `TestMode` (accepts tokens without cryptographic verification; only when `SE_OIDC_TEST_MODE=1` is set)
-  - `Issuer` (expected `iss`)
-  - `ClientId` (expected `aud` / `client_id`)
-  - `UsernameClaim` (claim used to map to SoftEther username; default `preferred_username`)
-  - `StaticHs256Key` (reserved; currently not used for RS256 verification)
-- Token validation uses `OidcValidateIdToken()`:
-  - Verifies signature and time claims.
-  - Enforces issuer and audience if configured.
-  - Maps username from the configured claim and requires it to match the SoftEther username.
-  - Verification key resolution order: `SE_OIDC_PUBKEY_PEM`, then `SE_OIDC_JWKS_URI`, then issuer-derived JWKS (Keycloak-style `/protocol/openid-connect/certs` when issuer contains `/realms/`).
-- Client flow:
-  - OAuth2/OIDC Authorization Code with PKCE (S256) and a local loopback redirect.
-  - Opens the authorization URL via system browser or embedded WebView (Windows helper).
-  - Stores refresh tokens in a secure store and attempts silent refresh before falling back to interactive sign-in.
-
-CLI / server configuration:
-
-- `UserOidcSet` command in `vpncmd` configures a user for OIDC with parameters:
-  `TESTMODE`, `ISSUER`, `CLIENTID`, `USERNAMECLAIM`, `HS256KEY`.
 
 # BOARD MEMBERS OF THIS REPOSITORY
 
@@ -337,3 +353,4 @@ Our e-mail address for security reports is:
 Please note that the above e-mail address is not a technical support
 inquiry address. If you need technical assistance, please visit
 https://www.softether.org/ and ask your question on the users forum.
+
