@@ -39,8 +39,6 @@ CLI / server configuration:
   - Uses the client notification helper (`vpnuihelper`) to open an embedded WebView2 window when available.
   - Falls back to the system default browser if WebView2 is not available.
   - The tray helper provides quick actions: Connect, Disconnect, Log out (clear OIDC tokens), and Log out and forget (clear tokens + WebView2 data).
-- macOS / Linux / other:
-  - Opens the system default browser (via `open` or `xdg-open`) for the login flow.
 - After successful login, the client receives the authorization code via a local loopback redirect and completes token exchange. Subsequent connects attempt silent refresh first.
 
 Quick start (OIDC):
@@ -353,4 +351,5 @@ Our e-mail address for security reports is:
 Please note that the above e-mail address is not a technical support
 inquiry address. If you need technical assistance, please visit
 https://www.softether.org/ and ask your question on the users forum.
+
 
